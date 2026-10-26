@@ -1,4 +1,3 @@
-```python
 import random
 from itertools import combinations
 
@@ -1112,4 +1111,3 @@ with st.expander("승률 계산 및 게임 상태 처리 안내"):
     - 이 앱은 실제 온라인 포커 테이블에 연결되지 않습니다.
     - 액션 추천은 참고용이며 승리나 수익을 보장하지 않습니다.
     """)
-```
