@@ -54,7 +54,7 @@ TIER_C = {
 
 
 # ==========================================
-# 2. 사이드바: UI 테마 (라이트 모드 기본) 및 기본 옵션
+# 2. 사이드바: 옵션 슬라이더 및 테마 선택 (요청된 지정 순서)
 # ==========================================
 opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
 sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
@@ -276,6 +276,7 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
+# 전역 CSS 주입 (범례 뱃지 CSS 전용 클래스 정의)
 st.markdown(f"""
     <style>
     .stApp {{
@@ -296,6 +297,20 @@ st.markdown(f"""
     }}
     
     {" ".join(dynamic_button_styles)}
+
+    /* ★ 범례 전용 CSS 클래스 정의 (100% 배경색 출력) ★ */
+    .legend-badge {{
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.85rem;
+    }}
+    .badge-s {{ background-color: {bg_s} !important; color: {badge_txt} !important; }}
+    .badge-a {{ background-color: {bg_a} !important; color: {badge_txt} !important; }}
+    .badge-b {{ background-color: {bg_b} !important; color: {badge_txt} !important; }}
+    .badge-c {{ background-color: {bg_c} !important; color: {badge_txt} !important; }}
+    .badge-d {{ background-color: {bg_d} !important; color: {badge_txt} !important; border: 1px solid #cbd5e1; }}
 
     .card-badge {{
         display: inline-block;
@@ -402,7 +417,7 @@ def calculate_pot_odds_math(bet_pct):
 # ==========================================
 st.title("♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
 
-# ★ 배경 색상 범례 인라인 스타일 직접 지정 (C급 색상 100% 오버라이드 보장) ★
+# ★ 배경 색상 범례 (CSS 클래스 연동 방식) ★
 st.markdown(f"""
     <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
         <b>글씨 색상:</b> 
@@ -410,11 +425,11 @@ st.markdown(f"""
         <span style="color:{txt_suited};">초록(수딧)</span> | 
         <span style="color:{txt_off};">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
         <b>배경 색상:</b> 
-        <span style="background-color:{bg_s} !important; color:{badge_txt} !important; padding:2px 6px; border-radius:3px; font-weight:bold;">S급</span> 
-        <span style="background-color:{bg_a} !important; color:{badge_txt} !important; padding:2px 6px; border-radius:3px; font-weight:bold;">A급</span> 
-        <span style="background-color:{bg_b} !important; color:{badge_txt} !important; padding:2px 6px; border-radius:3px; font-weight:bold;">B급</span> 
-        <span style="background-color:{bg_c} !important; color:{badge_txt} !important; padding:2px 6px; border-radius:3px; font-weight:bold;">C급</span> 
-        <span style="background-color:{bg_d} !important; color:{badge_txt} !important; padding:2px 6px; border-radius:3px; font-weight:bold; border:1px solid #ccc;">D급</span>
+        <span class="legend-badge badge-s">S급</span> 
+        <span class="legend-badge badge-a">A급</span> 
+        <span class="legend-badge badge-b">B급</span> 
+        <span class="legend-badge badge-c">C급</span> 
+        <span class="legend-badge badge-d">D급</span>
     </div>
 """, unsafe_allow_html=True)
 
