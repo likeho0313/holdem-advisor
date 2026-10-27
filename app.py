@@ -1,1113 +1,503 @@
-import random
-from itertools import combinations
-
 import streamlit as st
-from treys import Card, Deck, Evaluator
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+import re
+import random
+from datetime import datetime, timedelta
 
+# ==========================================
+# 0. 페이지 기본 설정 및 테마 CSS
+# ==========================================
 st.set_page_config(
-    page_title="홀덤 핸드·액션 어드바이저",
+    page_title="HM3 Lite - Poker Data Analytics",
     page_icon="♠️",
     layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-RANKS = "AKQJT98765432"
-SUITS = "shdc"
-
-SUIT_SYMBOL = {
-    "s": "♠",
-    "h": "♥",
-    "d": "♦",
-    "c": "♣",
-}
-
-EVALUATOR = Evaluator()
-
-
-# =========================================================
-# 카드 및 핸드 유틸리티
-# =========================================================
-
-def card_label(card_code):
-    """As -> A♠ 형식으로 표시"""
-    return card_code[0] + SUIT_SYMBOL[card_code[1]]
-
-
-def hand_type(row_rank, col_rank):
-    """169개 시작 핸드 조합의 이름 생성"""
-    if row_rank == col_rank:
-        return row_rank + col_rank
-
-    if RANKS.index(row_rank) < RANKS.index(col_rank):
-        return row_rank + col_rank + "s"
-
-    return col_rank + row_rank + "o"
-
-
-def get_hand_combinations(hand):
-    """핸드 유형에 해당하는 실제 카드 조합 생성"""
-    if len(hand) == 2:
-        rank = hand[0]
-        return list(
-            combinations(
-                [rank + suit for suit in SUITS],
-                2,
-            )
-        )
-
-    rank1 = hand[0]
-    rank2 = hand[1]
-    suited_type = hand[2]
-
-    if suited_type == "s":
-        return [
-            (rank1 + suit, rank2 + suit)
-            for suit in SUITS
-        ]
-
-    return [
-        (rank1 + suit1, rank2 + suit2)
-        for suit1 in SUITS
-        for suit2 in SUITS
-        if suit1 != suit2
-    ]
-
-
-def estimate_equity(hero_cards, board_cards, opponents, iterations=2500):
-    """
-    상대의 비공개 핸드를 무작위로 가정한 몬테카를로 승률 추정.
-    동률이면 팟 지분을 나누어 계산한다.
-    """
-    if len(hero_cards) != 2:
-        raise ValueError("내 핸드는 정확히 2장이어야 합니다.")
-
-    if len(board_cards) not in (0, 3, 4, 5):
-        raise ValueError("보드는 0장, 3장, 4장 또는 5장이어야 합니다.")
-
-    known_cards = hero_cards + board_cards
-
-    if len(set(known_cards)) != len(known_cards):
-        raise ValueError("내 핸드와 보드에 중복 카드가 있습니다.")
-
-    if len(known_cards) + opponents * 2 > 52:
-        raise ValueError("플레이어 수가 너무 많습니다.")
-
-    deck = [
-        card
-        for card in Deck.GetFullDeck()
-        if card not in known_cards
-    ]
-
-    missing_board = 5 - len(board_cards)
-    total_share = 0.0
-
-    for _ in range(iterations):
-        draw_count = missing_board + opponents * 2
-        drawn = random.sample(deck, draw_count)
-
-        final_board = list(board_cards)
-        final_board.extend(drawn[:missing_board])
-
-        offset = missing_board
-
-        hero_score = EVALUATOR.evaluate(
-            final_board,
-            hero_cards,
-        )
-
-        scores = [hero_score]
-
-        for _opponent in range(opponents):
-            opponent_cards = drawn[offset:offset + 2]
-            offset += 2
-
-            score = EVALUATOR.evaluate(
-                final_board,
-                opponent_cards,
-            )
-
-            scores.append(score)
-
-        best_score = min(scores)
-
-        if hero_score == best_score:
-            winner_count = sum(
-                1 for score in scores
-                if score == best_score
-            )
-
-            total_share += 1 / winner_count
-
-    return total_share / iterations
-
-
-def get_recommendation(
-    equity,
-    pot,
-    call_amount,
-    remaining_stack,
-):
-    """
-    팟 오즈와 추정 지분을 이용한 단순 참고용 액션 추천.
-    전문 GTO 솔버가 아니다.
-    """
-    pot = max(0.0, float(pot))
-    call_amount = max(0.0, float(call_amount))
-    remaining_stack = max(0.0, float(remaining_stack))
-
-    if pot + call_amount > 0:
-        pot_odds = call_amount / (pot + call_amount)
-    else:
-        pot_odds = 0.0
-
-    if remaining_stack <= 0:
-        return (
-            "폴드",
-            "남은 시드가 없어 추가 베팅할 수 없습니다.",
-            pot_odds,
-        )
-
-    if call_amount <= 0:
-        if equity >= 0.65:
-            return (
-                "베팅/올인 검토",
-                "추정 지분이 높은 편입니다. 상대 범위와 스택을 함께 고려하세요.",
-                pot_odds,
-            )
-
-        return (
-            "체크 권장",
-            "추가 콜 금액이 없습니다. 체크할 수 있는 상황인지 확인하세요.",
-            pot_odds,
-        )
-
-    if call_amount >= remaining_stack:
-        if equity >= max(0.58, pot_odds + 0.08):
-            return (
-                "올인 콜 검토",
-                "콜 금액이 남은 시드에 가깝거나 더 큽니다.",
-                pot_odds,
-            )
-
-        return (
-            "폴드 권장",
-            "현재 추정 지분으로는 큰 금액을 콜하기 어렵습니다.",
-            pot_odds,
-        )
-
-    if equity >= pot_odds + 0.12:
-        return (
-            "콜 검토",
-            "팟 오즈 대비 추정 지분이 충분한 편입니다.",
-            pot_odds,
-        )
-
-    if equity >= pot_odds + 0.03:
-        return (
-            "콜 또는 폴드",
-            "팟 오즈와 추정 지분의 차이가 작습니다.",
-            pot_odds,
-        )
-
-    return (
-        "폴드 권장",
-        "현재 입력 기준으로 콜에 필요한 지분을 충족하지 못합니다.",
-        pot_odds,
-    )
-
-
-# =========================================================
-# 게임 상태 관리
-# =========================================================
-
-def init_state():
-    defaults = {
-        "initial_stack": 10000.0,
-        "remaining_stack": 10000.0,
-
-        "bb": 100.0,
-        "sb": 50.0,
-        "ante": 0.0,
-
-        "player_seat": 6,
-        "opponent_seats": [1, 3, 8],
-        "start_seat": 1,
-
-        "selected_hand": "AKs",
-        "selected_combo": "As|Ks",
-
-        "board_codes": [],
-
-        "pre_pot": 150.0,
-        "pre_call": 100.0,
-
-        "flop_pot": 150.0,
-        "flop_call": 100.0,
-
-        "hand_started": False,
-        "hand_finished": False,
-        "hand_number": 1,
-
-        "ante_paid_hand": False,
-        "last_action": "",
-        "last_notice": "",
-
-        "equity": None,
-        "equity_stage": None,
-
-        "pre_iterations": 2500,
-        "post_iterations": 2500,
+# HM3 스타일의 어두운 테마 및 커스텀 카드 UI 스타일
+st.markdown("""
+    <style>
+    .main {
+        background-color: #0e1117;
     }
-
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-
-
-def on_bb_change():
-    """BB 변경 시 SB 및 기본 콜 금액을 갱신"""
-    bb = float(st.session_state["bb"])
-
-    st.session_state["sb"] = bb / 2
-    st.session_state["pre_call"] = bb
-    st.session_state["flop_call"] = bb
-
-    if not st.session_state["hand_started"]:
-        opponents = len(st.session_state["opponent_seats"])
-        total_players = opponents + 1
-
-        estimated_pot = (
-            bb
-            + bb / 2
-            + total_players * float(st.session_state["ante"])
-        )
-
-        st.session_state["pre_pot"] = estimated_pot
-        st.session_state["flop_pot"] = estimated_pot
-
-
-def on_initial_stack_change():
-    """초기 시드를 수정하면 현재 시드도 새 값으로 맞춤"""
-    st.session_state["remaining_stack"] = float(
-        st.session_state["initial_stack"]
-    )
-
-
-def reset_blinds():
-    """
-    블라인드·앤티 초기화.
-    초기 시드와 현재 남은 시드는 유지한다.
-    """
-    st.session_state["bb"] = 100.0
-    st.session_state["sb"] = 50.0
-    st.session_state["ante"] = 0.0
-
-    st.session_state["pre_call"] = 100.0
-    st.session_state["flop_call"] = 100.0
-
-    if not st.session_state["hand_started"]:
-        st.session_state["pre_pot"] = 150.0
-        st.session_state["flop_pot"] = 150.0
-
-    st.session_state["equity"] = None
-    st.session_state["equity_stage"] = None
-
-
-def reset_game():
-    """게임 전체 초기화"""
-    defaults = {
-        "initial_stack": 10000.0,
-        "remaining_stack": 10000.0,
-
-        "bb": 100.0,
-        "sb": 50.0,
-        "ante": 0.0,
-
-        "player_seat": 6,
-        "opponent_seats": [1, 3, 8],
-        "start_seat": 1,
-
-        "selected_hand": "AKs",
-        "selected_combo": "As|Ks",
-
-        "board_codes": [],
-
-        "pre_pot": 150.0,
-        "pre_call": 100.0,
-
-        "flop_pot": 150.0,
-        "flop_call": 100.0,
-
-        "hand_started": False,
-        "hand_finished": False,
-        "hand_number": 1,
-
-        "ante_paid_hand": False,
-        "last_action": "",
-        "last_notice": "",
-
-        "equity": None,
-        "equity_stage": None,
-
-        "pre_iterations": 2500,
-        "post_iterations": 2500,
+    .metric-card {
+        background-color: #1e222b;
+        border-radius: 10px;
+        padding: 15px;
+        border: 1px solid #2e3440;
+        text-align: center;
+        margin-bottom: 10px;
     }
-
-    for key, value in defaults.items():
-        st.session_state[key] = value
-
-
-def move_start_seat():
-    """시작 플레이어를 다음 좌석으로 이동"""
-    st.session_state["start_seat"] = (
-        int(st.session_state["start_seat"]) % 10
-    ) + 1
-
-
-def finish_hand(reason):
-    """
-    핸드를 종료한다.
-    다음 핸드 시작 좌석으로 이동하지만 남은 시드는 유지한다.
-    """
-    if st.session_state["hand_finished"]:
-        return
-
-    st.session_state["hand_finished"] = True
-    st.session_state["hand_started"] = False
-    st.session_state["last_action"] = reason
-
-    move_start_seat()
-
-    st.session_state["equity"] = None
-    st.session_state["equity_stage"] = None
-
-    st.session_state["board_codes"] = []
-
-    st.session_state["last_notice"] = (
-        f"{reason} 처리 완료. "
-        f"다음 핸드 시작 플레이어는 "
-        f"{st.session_state['start_seat']}번입니다. "
-        f"현재 남은 시드는 "
-        f"{st.session_state['remaining_stack']:,.0f}입니다."
-    )
-
-
-def start_hand():
-    """
-    다음 핸드를 시작한다.
-    앤티를 아직 내지 않았다면 내 시드에서 차감하고 팟에 더한다.
-    """
-    if st.session_state["remaining_stack"] <= 0:
-        st.session_state["last_notice"] = (
-            "남은 시드가 없어 새 핸드를 시작할 수 없습니다."
-        )
-        return
-
-    if st.session_state["hand_started"]:
-        st.session_state["last_notice"] = (
-            "이미 핸드가 진행 중입니다."
-        )
-        return
-
-    st.session_state["hand_started"] = True
-    st.session_state["hand_finished"] = False
-    st.session_state["ante_paid_hand"] = False
-
-    st.session_state["equity"] = None
-    st.session_state["equity_stage"] = None
-    st.session_state["board_codes"] = []
-
-    opponents = len(st.session_state["opponent_seats"])
-    total_players = opponents + 1
-
-    # 핸드 시작 시 새 팟을 구성한다.
-    st.session_state["pre_pot"] = (
-        st.session_state["sb"]
-        + st.session_state["bb"]
-        + total_players * st.session_state["ante"]
-    )
-
-    st.session_state["flop_pot"] = st.session_state["pre_pot"]
-
-    # 내가 시작 플레이어 다음 차례인 경우에도 앤티는 핸드 시작 시 차감한다.
-    ante = float(st.session_state["ante"])
-    paid_ante = min(
-        ante,
-        float(st.session_state["remaining_stack"]),
-    )
-
-    st.session_state["remaining_stack"] -= paid_ante
-    st.session_state["pre_pot"] += paid_ante
-    st.session_state["flop_pot"] = st.session_state["pre_pot"]
-
-    st.session_state["ante_paid_hand"] = True
-
-    st.session_state["last_notice"] = (
-        f"핸드 {st.session_state['hand_number']} 시작. "
-        f"앤티 {paid_ante:,.0f} 차감, "
-        f"남은 시드 {st.session_state['remaining_stack']:,.0f}."
-    )
-
-    st.session_state["hand_number"] += 1
-
-
-def apply_call(stage):
-    """콜 금액만큼 시드에서 차감하고 팟에 더한다."""
-    if not st.session_state["hand_started"]:
-        st.session_state["last_notice"] = (
-            "먼저 '새 핸드 시작' 버튼을 눌러주세요."
-        )
-        return
-
-    if st.session_state["hand_finished"]:
-        return
-
-    call_key = "pre_call" if stage == "pre" else "flop_call"
-    pot_key = "pre_pot" if stage == "pre" else "flop_pot"
-
-    requested = max(
-        0.0,
-        float(st.session_state[call_key]),
-    )
-
-    remaining = max(
-        0.0,
-        float(st.session_state["remaining_stack"]),
-    )
-
-    paid = min(requested, remaining)
-
-    st.session_state["remaining_stack"] = remaining - paid
-    st.session_state[pot_key] += paid
-
-    # 콜을 한 번 처리한 뒤 같은 금액이 중복 차감되지 않도록 초기화한다.
-    st.session_state[call_key] = 0.0
-
-    if stage == "pre":
-        st.session_state["flop_pot"] = st.session_state["pre_pot"]
-
-    st.session_state["last_notice"] = (
-        f"{stage.upper()} 콜 처리: {paid:,.0f} 투입. "
-        f"남은 시드 {st.session_state['remaining_stack']:,.0f}, "
-        f"현재 팟 {st.session_state[pot_key]:,.0f}."
-    )
-
-    st.session_state["equity"] = None
-    st.session_state["equity_stage"] = None
-
-    if st.session_state["remaining_stack"] <= 0:
-        st.session_state["last_notice"] += (
-            " 남은 시드가 0이므로 올인 상태입니다."
-        )
-
-
-def apply_fold():
-    """폴드 시 핸드를 종료하고 다음 핸드 준비 상태로 이동"""
-    finish_hand("폴드")
-
-
-# =========================================================
-# 초기화
-# =========================================================
-
-init_state()
-
-
-# =========================================================
-# 사이드바: 게임 설정
-# =========================================================
-
-with st.sidebar:
-    st.header("게임 설정")
-
-    st.number_input(
-        "초기 시드 / 시작 스택",
-        min_value=1.0,
-        step=100.0,
-        key="initial_stack",
-        on_change=on_initial_stack_change,
-    )
-
-    st.metric(
-        "현재 남은 시드",
-        f"{st.session_state['remaining_stack']:,.0f}",
-    )
-
-    st.number_input(
-        "빅블라인드(BB)",
-        min_value=1.0,
-        step=10.0,
-        key="bb",
-        on_change=on_bb_change,
-    )
-
-    st.number_input(
-        "스몰블라인드(SB = BB ÷ 2)",
-        min_value=0.5,
-        step=5.0,
-        key="sb",
-        disabled=True,
-    )
-
-    st.number_input(
-        "앤티(Ante / ENT)",
-        min_value=0.0,
-        step=5.0,
-        key="ante",
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.button(
-            "블라인드·앤티 초기화",
-            use_container_width=True,
-            on_click=reset_blinds,
-        )
-
-    with col2:
-        st.button(
-            "게임 전체 초기화",
-            type="primary",
-            use_container_width=True,
-            on_click=reset_game,
-        )
-
-    with st.expander("용어 설명", expanded=True):
-        st.markdown("""
-        - **초기 시드:** 게임을 시작할 때 보유한 칩.
-        - **현재 남은 시드:** 앤티와 콜 등으로 칩을 낸 뒤 남은 금액.
-        - **SB:** 스몰 블라인드. 이 앱에서는 BB의 절반.
-        - **BB:** 빅 블라인드. 기본 콜 금액의 기준값.
-        - **앤티(ENT):** 핸드마다 내는 강제 베팅.
-        - **현재 팟:** 중앙에 모인 칩의 총액.
-        - **콜 필요 금액:** 현재 베팅에 맞추기 위해 추가로 낼 금액.
-        - **팟 오즈:** 콜 금액 대비 최종 팟을 기준으로 계산한 손익분기 승률 근사치.
-        """)
-
-
-# =========================================================
-# 메인 화면
-# =========================================================
-
-st.title("♠️ 홀덤 핸드·액션 어드바이저")
-
-st.caption(
-    "승률은 상대의 실제 핸드 범위를 알 수 없다고 가정한 "
-    "무작위 시뮬레이션 결과입니다. 추천은 참고용입니다."
-)
-
-st.subheader("1. 게임 진행")
-
-status_col1, status_col2, status_col3 = st.columns(3)
-
-status_col1.metric(
-    "핸드 번호",
-    st.session_state["hand_number"],
-)
-
-status_col2.metric(
-    "시작 플레이어",
-    f"{st.session_state['start_seat']}번",
-)
-
-status_col3.metric(
-    "현재 상태",
-    "진행 중" if st.session_state["hand_started"]
-    else "종료 / 대기",
-)
-
-game_buttons = st.columns(3)
-
-with game_buttons[0]:
-    if st.button(
-        "새 핸드 시작",
-        type="primary",
-        use_container_width=True,
-        disabled=st.session_state["hand_started"],
-    ):
-        start_hand()
-        st.rerun()
-
-with game_buttons[1]:
-    if st.button(
-        "게임 종료",
-        use_container_width=True,
-        disabled=not st.session_state["hand_started"],
-    ):
-        finish_hand("게임 종료")
-        st.rerun()
-
-with game_buttons[2]:
-    if st.button(
-        "폴드",
-        use_container_width=True,
-        disabled=not st.session_state["hand_started"],
-    ):
-        apply_fold()
-        st.rerun()
-
-if st.session_state["last_notice"]:
-    st.info(st.session_state["last_notice"])
-
-st.caption(
-    "핸드 종료 후 시작 플레이어가 1→2→…→10→1 순서로 이동합니다. "
-    "핸드 종료 시 남은 시드는 유지됩니다."
-)
-
-
-# =========================================================
-# 좌석 지정
-# =========================================================
-
-st.subheader("2. 테이블 자리 지정")
-
-seat_cols = st.columns(5)
-
-for seat in range(1, 11):
-    col = seat_cols[(seat - 1) % 5]
-
-    if seat == st.session_state["player_seat"]:
-        label = f"🟢 {seat}번 · 나"
-    elif seat in st.session_state["opponent_seats"]:
-        label = f"🔵 {seat}번 · 플레이어"
-    elif seat == st.session_state["start_seat"]:
-        label = f"⭐ {seat}번 · 시작"
+    .metric-title {
+        font-size: 0.85rem;
+        color: #8892b0;
+        margin-bottom: 5px;
+    }
+    .metric-value {
+        font-size: 1.6rem;
+        font-weight: bold;
+        color: #e6f1ff;
+    }
+    .hud-badge {
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-weight: bold;
+        font-size: 0.9rem;
+        display: inline-block;
+    }
+    .tag-tag { background-color: #00bcd4; color: black; }
+    .tag-lag { background-color: #ff9800; color: black; }
+    .tag-fish { background-color: #4caf50; color: white; }
+    .tag-nit { background-color: #9c27b0; color: white; }
+    .tag-maniac { background-color: #f44336; color: white; }
+    </style>
+""", unsafe_allow_html=True)
+
+
+# ==========================================
+# 1. 포커 핸드 히스토리 파서 (PokerStars Style)
+# ==========================================
+class PokerHandParser:
+    """PokerStars 형식의 핸드 히스토리 텍스트 파싱 클래스"""
+    
+    @staticmethod
+    def parse_text(text_content):
+        hands_raw = text_content.strip().split("\n\n\n")
+        if len(hands_raw) <= 1:
+            hands_raw = text_content.strip().split("\n\n")
+            
+        parsed_hands = []
+        parsed_actions = []
+        
+        for raw_hand in hands_raw:
+            if not raw_hand.strip():
+                continue
+                
+            hand_id_match = re.search(r"Hand #(\d+):", raw_hand)
+            if not hand_id_match:
+                continue
+            hand_id = hand_id_match.group(1)
+            
+            # 판돈(Stakes)
+            stakes_match = re.search(r"\(\$(\d+\.\d+)/\$(\d+\.\d+)", raw_hand)
+            sb_val = float(stakes_match.group(1)) if stakes_match else 0.50
+            bb_val = float(stakes_match.group(2)) if stakes_match else 1.00
+            
+            # 버튼 / 포지션 파싱
+            seats = re.findall(r"Seat (\d+): ([^\(]+) \(\$(\d+\.\d+) in chips\)", raw_hand)
+            players = [s[1].strip() for s in seats]
+            
+            if not players:
+                continue
+                
+            # 섹션 분할
+            sections = raw_hand.split("*** ")
+            preflop_str = ""
+            flop_str = ""
+            turn_str = ""
+            river_str = ""
+            summary_str = ""
+            
+            for sec in sections:
+                if sec.startswith("HOLE CARDS ***"):
+                    preflop_str = sec
+                elif sec.startswith("FLOP ***"):
+                    flop_str = sec
+                elif sec.startswith("TURN ***"):
+                    turn_str = sec
+                elif sec.startswith("RIVER ***"):
+                    river_str = sec
+                elif sec.startswith("SUMMARY ***"):
+                    summary_str = sec
+            
+            # 보드 카드 파싱
+            board_match = re.search(r"Board \[([^\]]+)\]", raw_hand)
+            board_cards = board_match.group(1) if board_match else ""
+            
+            # 총 팟 크기 파싱
+            pot_match = re.search(r"Total pot \$(\d+\.?\d*)", raw_hand)
+            total_pot = float(pot_match.group(1)) if pot_match else 0.0
+            
+            # 각 플레이어별 세부 액션 및 승패 집계
+            for p in players:
+                # 액션 추출
+                p_lines = [line for line in raw_hand.split("\n") if line.startswith(f"{p}:")]
+                
+                vpip = False
+                pfr = False
+                three_bet = False
+                bets_cnt = 0
+                raises_cnt = 0
+                calls_cnt = 0
+                folds_cnt = 0
+                saw_showdown = False
+                
+                # Preflop 액션 검사
+                pf_lines = [l for l in preflop_str.split("\n") if l.startswith(f"{p}:")]
+                for l in pf_lines:
+                    if "raises" in l:
+                        vpip = True
+                        pfr = True
+                        raises_cnt += 1
+                        if "raises" in preflop_str.split(l)[0]: # 이전 리레이즈 존재 시 3-bet
+                            three_bet = True
+                    elif "calls" in l:
+                        vpip = True
+                        calls_cnt += 1
+                    elif "bets" in l:
+                        vpip = True
+                        bets_cnt += 1
+                    elif "folds" in l:
+                        folds_cnt += 1
+                
+                # Postflop 액션 검사
+                postflop_str = flop_str + turn_str + river_str
+                p_post_lines = [l for l in postflop_str.split("\n") if l.startswith(f"{p}:")]
+                for l in p_post_lines:
+                    if "raises" in l:
+                        raises_cnt += 1
+                    elif "bets" in l:
+                        bets_cnt += 1
+                    elif "calls" in l:
+                        calls_cnt += 1
+                    elif "folds" in l:
+                        folds_cnt += 1
+                
+                # Showdown 판단
+                if "shows" in raw_hand and p in raw_hand:
+                    saw_showdown = True
+                
+                # 순수익(Net Won) 및 승자 계산
+                collected = 0.0
+                collect_match = re.findall(rf"{re.escape(p)} collected \$(\d+\.?\d*)", raw_hand)
+                if collect_match:
+                    collected = sum([float(x) for x in collect_match])
+                
+                # 베팅금 추정 (간이 계산)
+                invested = (calls_cnt + bets_cnt + raises_cnt) * bb_val
+                if pfr:
+                    invested += bb_val * 2.5
+                net_won = collected - invested
+
+                parsed_actions.append({
+                    "hand_id": hand_id,
+                    "player": p,
+                    "vpip": 1 if vpip else 0,
+                    "pfr": 1 if pfr else 0,
+                    "three_bet": 1 if three_bet else 0,
+                    "bets": bets_cnt,
+                    "raises": raises_cnt,
+                    "calls": calls_cnt,
+                    "folds": folds_cnt,
+                    "saw_showdown": 1 if saw_showdown else 0,
+                    "won_at_showdown": 1 if (saw_showdown and collected > 0) else 0,
+                    "collected": collected,
+                    "net_won": net_won,
+                    "board": board_cards,
+                    "total_pot": total_pot,
+                    "raw_hand": raw_hand
+                })
+                
+        return pd.DataFrame(parsed_actions)
+
+
+# ==========================================
+# 2. 샘플 더미 데이터 생성기 (테스트용)
+# ==========================================
+@st.cache_data
+def generate_sample_hand_data(num_hands=150):
+    """업로드 파일이 없을 때 앱 테스트를 위한 가상 핸드 데이타 생성기"""
+    players = ["Hero", "GTO_Master", "Fish_Pro", "CallingStation", "AggroKid", "RockSolid"]
+    data = []
+    
+    start_time = datetime.now() - timedelta(days=5)
+    
+    for i in range(1, num_hands + 1):
+        hand_id = f"2401{i:04d}"
+        timestamp = start_time + timedelta(minutes=i * 3)
+        board_cards = random.choice(["As Kd 7h Jc 2s", "Qh Th 4c 9d", "7s 8s 9c", "Ac Kh Qs Jd 10h", "2c 5d 9h"])
+        pot = round(random.uniform(4.0, 120.0), 2)
+        
+        # 6명 플레이어 배정
+        for p in players:
+            # 플레이어 성향별 확률 부여
+            if p == "Hero":
+                vpip = 1 if random.random() < 0.24 else 0
+                pfr = 1 if (vpip and random.random() < 0.75) else 0
+            elif p == "Fish_Pro":
+                vpip = 1 if random.random() < 0.55 else 0
+                pfr = 1 if (vpip and random.random() < 0.20) else 0
+            elif p == "AggroKid":
+                vpip = 1 if random.random() < 0.38 else 0
+                pfr = 1 if (vpip and random.random() < 0.80) else 0
+            else:
+                vpip = 1 if random.random() < 0.20 else 0
+                pfr = 1 if (vpip and random.random() < 0.70) else 0
+
+            three_bet = 1 if (pfr and random.random() < 0.25) else 0
+            bets = random.randint(0, 2) if vpip else 0
+            raises = (1 if pfr else 0) + (1 if three_bet else 0)
+            calls = random.randint(0, 2) if vpip else 0
+            folds = 1 if (not vpip or random.random() < 0.6) else 0
+            saw_sd = 1 if (vpip and folds == 0 and random.random() < 0.4) else 0
+            won_sd = 1 if (saw_sd and random.random() < 0.55) else 0
+            
+            # 수익 계산
+            if won_sd:
+                net_won = round(pot * random.uniform(0.7, 1.0), 2)
+            elif vpip:
+                net_won = -round(random.uniform(2.0, 25.0), 2)
+            else:
+                net_won = -0.5 if random.random() < 0.3 else 0.0
+                
+            raw_text = f"""PokerStars Hand #{hand_id}: Hold'em No Limit ($0.50/$1.00 USD) - {timestamp.strftime('%Y/%m/%d %H:%M:%S')} ET
+Table 'Alpha' 6-max Seat #1 is the button
+Seat 1: Hero ($100.00 in chips)
+Seat 2: GTO_Master ($120.00 in chips)
+Seat 3: Fish_Pro ($45.00 in chips)
+Seat 4: CallingStation ($85.00 in chips)
+Seat 5: AggroKid ($210.00 in chips)
+Seat 6: RockSolid ($100.00 in chips)
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd]
+{p}: {'raises $3.00' if pfr else ('calls $1.00' if vpip else 'folds')}
+*** SUMMARY ***
+Total pot ${pot} | Board [{board_cards}]
+Player {p} {'won' if won_sd else 'folded'}
+"""
+            data.append({
+                "hand_id": hand_id,
+                "timestamp": timestamp,
+                "player": p,
+                "vpip": vpip,
+                "pfr": pfr,
+                "three_bet": three_bet,
+                "bets": bets,
+                "raises": raises,
+                "calls": calls,
+                "folds": folds,
+                "saw_showdown": saw_sd,
+                "won_at_showdown": won_sd,
+                "collected": pot if won_sd else 0.0,
+                "net_won": net_won,
+                "board": board_cards,
+                "total_pot": pot,
+                "raw_hand": raw_text
+            })
+            
+    return pd.DataFrame(data)
+
+
+# ==========================================
+# 3. 데이터 로딩 및 사이드바
+# ==========================================
+st.sidebar.title("♠️ HM3 Lite Manager")
+st.sidebar.markdown("---")
+
+uploaded_file = st.sidebar.file_uploader("핸드 히스토리 파일 (.txt)", type=["txt"])
+
+if uploaded_file is not None:
+    content = uploaded_file.read().decode("utf-8")
+    df = PokerHandParser.parse_text(content)
+    st.sidebar.success(f"파일 파싱 완료: {df['hand_id'].nunique()}개 핸드")
+else:
+    st.sidebar.info("💡 샘플 핸드 데이터를 기본 사용 중입니다.")
+    df = generate_sample_hand_data()
+
+# 플레이어 선택 필터
+all_players = sorted(df['player'].unique().tolist())
+selected_player = st.sidebar.selectbox("메인 히어로(Hero) 선택", all_players, index=0)
+
+# 선택된 플레이어 데이터 필터링
+player_df = df[df['player'] == selected_player].copy().reset_index(drop=True)
+
+
+# ==========================================
+# 4. 플레이어 포커 성향(Archetype) 판별 함수
+# ==========================================
+def get_player_style(vpip, pfr, af):
+    if vpip >= 35 and pfr >= 25:
+        return "Maniac (매니악)", "tag-maniac"
+    elif vpip >= 28 and pfr >= 20 and af >= 2.0:
+        return "LAG (Loose-Aggressive)", "tag-lag"
+    elif vpip < 25 and pfr >= 15 and af >= 1.8:
+        return "TAG (Tight-Aggressive)", "tag-tag"
+    elif vpip >= 30 and pfr < 15:
+        return "Calling Station (콜링 스테이션)", "tag-fish"
+    elif vpip < 18 and pfr < 12:
+        return "Rock / Nit (바위)", "tag-nit"
     else:
-        label = f"⚪ {seat}번 · 빈자리"
+        return "Passive / Balanced", "tag-tag"
 
-    col.markdown(
-        f"""
-        <div style="
-            border:1px solid #888;
-            border-radius:10px;
-            padding:10px;
-            text-align:center;
-            margin-bottom:5px;">
-            {label}
+
+# ==========================================
+# 5. 메인 UI 탭 구성
+# ==========================================
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 포커 통계 대시보드", 
+    "👤 가상 HUD & 프로필", 
+    "🎬 핸드 리플레이어", 
+    "📋 파싱 데이터 테이블"
+])
+
+
+# ------------------------------------------
+# TAB 1: 포커 통계 대시보드
+# ------------------------------------------
+with tab1:
+    st.subheader(f"📈 {selected_player} 님의 주요 성과 및 통계")
+    
+    total_hands = len(player_df)
+    vpip_pct = (player_df['vpip'].sum() / total_hands * 100) if total_hands > 0 else 0
+    pfr_pct = (player_df['pfr'].sum() / total_hands * 100) if total_hands > 0 else 0
+    three_bet_pct = (player_df['three_bet'].sum() / total_hands * 100) if total_hands > 0 else 0
+    
+    total_calls = player_df['calls'].sum()
+    total_agg = player_df['bets'].sum() + player_df['raises'].sum()
+    af_val = round(total_agg / total_calls, 2) if total_calls > 0 else total_agg
+    
+    showdowns = player_df['saw_showdown'].sum()
+    wsd_pct = (player_df['won_at_showdown'].sum() / showdowns * 100) if showdowns > 0 else 0
+    net_won_total = player_df['net_won'].sum()
+
+    # KPI 카드가 들어가는 상단 컬럼
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1.metric("총 핸드 수", f"{total_hands:,}개")
+    col2.metric("Net Won", f"${net_won_total:,.2f}", delta=f"{net_won_total:,.2f}")
+    col3.metric("VPIP", f"{vpip_pct:.1f}%")
+    col4.metric("PFR", f"{pfr_pct:.1f}%")
+    col5.metric("3-Bet %", f"{three_bet_pct:.1f}%")
+    col6.metric("AF (공격성)", f"{af_val}")
+
+    st.markdown("---")
+    
+    # 누적 수익 라인 차트 (Cumulative Net Won)
+    st.subheader("💵 누적 수익 그래프 (Net Won Graph)")
+    player_df['cum_net_won'] = player_df['net_won'].cumsum()
+    player_df['hand_num'] = np.arange(1, len(player_df) + 1)
+    
+    fig_cum = px.line(
+        player_df, 
+        x='hand_num', 
+        y='cum_net_won',
+        labels={'hand_num': '핸드 수', 'cum_net_won': '누적 수익 ($)'},
+        title=f"{selected_player}의 핸드 진행별 누적 그래프"
+    )
+    fig_cum.update_traces(line_color="#00e676" if net_won_total >= 0 else "#ff5252", line_width=2.5)
+    fig_cum.add_hline(y=0, line_dash="dash", line_color="gray")
+    fig_cum.update_layout(template="plotly_dark", height=400)
+    st.plotly_chart(fig_cum, use_container_width=True)
+
+
+# ------------------------------------------
+# TAB 2: 가상 HUD & 플레이어 프로필
+# ------------------------------------------
+with tab2:
+    st.subheader("👤 플레이어 성향 검색 및 Virtual HUD")
+    
+    search_p = st.selectbox("조회할 플레이어 선택", all_players, index=all_players.index(selected_player))
+    p_df = df[df['player'] == search_p]
+    p_hands = len(p_df)
+    
+    p_vpip = (p_df['vpip'].sum() / p_hands * 100) if p_hands > 0 else 0
+    p_pfr = (p_df['pfr'].sum() / p_hands * 100) if p_hands > 0 else 0
+    p_3bet = (p_df['three_bet'].sum() / p_hands * 100) if p_hands > 0 else 0
+    p_calls = p_df['calls'].sum()
+    p_agg = p_df['bets'].sum() + p_df['raises'].sum()
+    p_af = round(p_agg / p_calls, 2) if p_calls > 0 else p_agg
+    p_sd = p_df['saw_showdown'].sum()
+    p_wsd = (p_df['won_at_showdown'].sum() / p_sd * 100) if p_sd > 0 else 0
+    
+    style_label, style_class = get_player_style(p_vpip, p_pfr, p_af)
+    
+    # HUD 패널 카드 UI
+    st.markdown(f"""
+        <div style="background-color: #1a1e24; padding: 20px; border-radius: 12px; border: 2px solid #2d3748;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>♠️ {search_p}</h2>
+                <span class="hud-badge {style_class}">{style_label}</span>
+            </div>
+            <hr style="border-color: #2d3748; margin: 10px 0;">
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; text-align: center;">
+                <div><div class="metric-title">VPIP</div><div class="metric-value">{p_vpip:.1f}%</div></div>
+                <div><div class="metric-title">PFR</div><div class="metric-value">{p_pfr:.1f}%</div></div>
+                <div><div class="metric-title">3-BET</div><div class="metric-value">{p_3bet:.1f}%</div></div>
+                <div><div class="metric-title">AF</div><div class="metric-value">{p_af}</div></div>
+                <div><div class="metric-title">WSD%</div><div class="metric-value">{p_wsd:.1f}%</div></div>
+            </div>
         </div>
-        """,
-        unsafe_allow_html=True,
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 레이더 차트를 통한 플레이어 성향 레이어 분석
+    st.write("##### 🎯 능력치 다이어그램")
+    radar_categories = ['VPIP', 'PFR', '3-Bet', 'Aggression Factor', 'WSD%']
+    radar_values = [min(p_vpip, 100), min(p_pfr, 100), min(p_3bet * 3, 100), min(p_af * 20, 100), min(p_wsd, 100)]
+    
+    fig_radar = go.Figure(data=go.Scatterpolar(
+        r=radar_values,
+        theta=radar_categories,
+        fill='toself',
+        fillcolor='rgba(0, 188, 212, 0.3)',
+        line=dict(color='#00bcd4', width=2)
+    ))
+    fig_radar.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+        showlegend=False,
+        template="plotly_dark",
+        height=350
     )
+    st.plotly_chart(fig_radar, use_container_width=True)
 
-seat1, seat2, seat3 = st.columns(3)
 
-with seat1:
-    st.selectbox(
-        "내 자리",
-        list(range(1, 11)),
-        key="player_seat",
+# ------------------------------------------
+# TAB 3: 핸드 리플레이어 (Hand Replayer)
+# ------------------------------------------
+with tab3:
+    st.subheader("🎬 핸드 리플레이어 (Hand Replayer)")
+    
+    hand_ids = player_df['hand_id'].unique().tolist()
+    selected_hand_id = st.selectbox("복기할 핸드 ID 선택", hand_ids)
+    
+    hand_rows = df[df['hand_id'] == selected_hand_id]
+    first_row = hand_rows.iloc[0]
+    
+    col_rep1, col_rep2 = st.columns([1, 1])
+    
+    with col_rep1:
+        st.markdown("##### 🃏 핸드 요약 정보")
+        st.info(f"**Hand ID:** #{selected_hand_id}")
+        st.write(f"**보드 카드:** `{first_row['board'] if first_row['board'] else '없음 (Pre-flop 종료)'}`")
+        st.write(f"**최종 팟 크기:** `${first_row['total_pot']:.2f}`")
+        
+        # 승자 및 수익 표시
+        winners = hand_rows[hand_rows['collected'] > 0]
+        if not winners.empty:
+            for _, w in winners.iterrows():
+                st.success(f"🏆 승자: **{w['player']}** (+$ {w['collected']:.2f})")
+                
+    with col_rep2:
+        st.markdown("##### 📜 원본 텍스트로그 (Raw Hand History)")
+        st.code(first_row['raw_hand'], language="text")
+
+
+# ------------------------------------------
+# TAB 4: 파싱 데이터 테이블
+# ------------------------------------------
+with tab4:
+    st.subheader("📋 전체 파싱 데이터 검토 및 내보내기")
+    
+    st.dataframe(df, use_container_width=True)
+    
+    # CSV 다운로드 버튼
+    csv_data = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 CSV 파일로 다운로드",
+        data=csv_data,
+        file_name=f"parsed_poker_hands_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv"
     )
-
-with seat2:
-    possible_opponents = [
-        seat for seat in range(1, 11)
-        if seat != st.session_state["player_seat"]
-    ]
-
-    st.multiselect(
-        "나 이외의 플레이어 자리",
-        possible_opponents,
-        key="opponent_seats",
-    )
-
-with seat3:
-    st.selectbox(
-        "시작 플레이어 자리",
-        list(range(1, 11)),
-        key="start_seat",
-    )
-
-opponents = max(1, len(st.session_state["opponent_seats"]))
-
-st.caption(
-    f"승률 계산 인원: 나 포함 "
-    f"{len(st.session_state['opponent_seats']) + 1}명"
-)
-
-
-# =========================================================
-# 핸드 조합표
-# =========================================================
-
-st.subheader("3. 내 핸드 선택 — 169개 조합표")
-
-st.markdown(
-    "🟦 페어 · 🟩 수딧(같은 무늬) · "
-    "🟧 오프수딧(다른 무늬) · 🟥 선택된 핸드"
-)
-
-header = st.columns([0.6] + [1] * 13)
-header[0].markdown("**행/열**")
-
-for j, rank in enumerate(RANKS):
-    header[j + 1].markdown(f"**{rank}**")
-
-for i, row_rank in enumerate(RANKS):
-    cols = st.columns([0.6] + [1] * 13)
-    cols[0].markdown(f"**{row_rank}**")
-
-    for j, col_rank in enumerate(RANKS):
-        hand = hand_type(row_rank, col_rank)
-
-        if hand == st.session_state["selected_hand"]:
-            prefix = "🟥"
-        elif len(hand) == 2:
-            prefix = "🟦"
-        elif hand.endswith("s"):
-            prefix = "🟩"
-        else:
-            prefix = "🟧"
-
-        if cols[j + 1].button(
-            f"{prefix} {hand}",
-            key=f"hand_{i}_{j}",
-            use_container_width=True,
-        ):
-            st.session_state["selected_hand"] = hand
-            st.session_state["equity"] = None
-            st.session_state["equity_stage"] = None
-            st.rerun()
-
-with st.expander("시작 핸드 강도 설명", expanded=True):
-    st.markdown("""
-    **프리플랍 핸드 강도는 대략적인 기준입니다.**
-    실제 강도는 상대 수, 포지션, 스택과 베팅에 따라 달라집니다.
-
-    1. **최상위 페어:** AA, KK, QQ, JJ
-    2. **강한 상위 카드:** AKs, AKo, AQs
-    3. **중상위 핸드:** TT~77, AJs, KQs, KJs, QJs
-    4. **중간 페어·수딧 연결 핸드:** 66~22, JTs, T9s, 98s
-    5. **약한 오프수딧 핸드:** 낮은 비연결 카드 조합
-
-    - **페어:** 같은 숫자의 카드 두 장
-    - **수딧(s):** 두 카드의 무늬가 같음
-    - **오프수딧(o):** 두 카드의 무늬가 다름
-    - 169개 시작 핸드 유형은 실제 카드 조합 1,326개를 대표합니다.
-    """)
-
-selected_hand = st.session_state["selected_hand"]
-hand_combos = get_hand_combinations(selected_hand)
-
-combo_labels = [
-    f"{card_label(a)}  {card_label(b)}"
-    for a, b in hand_combos
-]
-
-combo_codes = [
-    f"{a}|{b}"
-    for a, b in hand_combos
-]
-
-combo_map = dict(zip(combo_labels, combo_codes))
-
-current_code = st.session_state["selected_combo"]
-
-current_label = next(
-    (
-        label for label, code in combo_map.items()
-        if code == current_code
-    ),
-    combo_labels[0],
-)
-
-selected_label = st.selectbox(
-    "실제 카드 무늬 선택",
-    combo_labels,
-    index=combo_labels.index(current_label),
-)
-
-st.session_state["selected_combo"] = combo_map[selected_label]
-
-hero_codes = st.session_state["selected_combo"].split("|")
-hero_cards = [Card.new(code) for code in hero_codes]
-
-st.write(
-    f"선택 핸드: **{selected_hand}** · "
-    f"실제 카드: **{card_label(hero_codes[0])}, "
-    f"{card_label(hero_codes[1])}**"
-)
-
-
-# =========================================================
-# 프리플랍
-# =========================================================
-
-st.subheader("4. 프리플랍 승률 및 액션 추천")
-
-pre1, pre2, pre3 = st.columns(3)
-
-with pre1:
-    st.number_input(
-        "3. 현재 팟 금액",
-        min_value=0.0,
-        step=10.0,
-        key="pre_pot",
-    )
-
-with pre2:
-    st.number_input(
-        "3. 콜 필요 금액",
-        min_value=0.0,
-        step=10.0,
-        key="pre_call",
-    )
-
-with pre3:
-    st.select_slider(
-        "시뮬레이션 반복 횟수",
-        options=[500, 1000, 2500, 5000, 10000],
-        key="pre_iterations",
-    )
-
-pre_buttons = st.columns(3)
-
-with pre_buttons[0]:
-    if st.button(
-        "3. 콜",
-        use_container_width=True,
-        disabled=not st.session_state["hand_started"],
-    ):
-        apply_call("pre")
-        st.rerun()
-
-with pre_buttons[1]:
-    if st.button(
-        "3. 폴드",
-        use_container_width=True,
-        disabled=not st.session_state["hand_started"],
-    ):
-        apply_fold()
-        st.rerun()
-
-with pre_buttons[2]:
-    if st.button(
-        "프리플랍 승률 계산",
-        type="primary",
-        use_container_width=True,
-    ):
-        try:
-            with st.spinner("승률 계산 중..."):
-                equity = estimate_equity(
-                    hero_cards,
-                    [],
-                    opponents,
-                    int(st.session_state["pre_iterations"]),
-                )
-
-            st.session_state["equity"] = equity
-            st.session_state["equity_stage"] = "pre"
-
-        except Exception as exc:
-            st.error(str(exc))
-
-if (
-    st.session_state["equity"] is not None
-    and st.session_state["equity_stage"] == "pre"
-):
-    equity = st.session_state["equity"]
-
-    action, reason, pot_odds = get_recommendation(
-        equity,
-        st.session_state["pre_pot"],
-        st.session_state["pre_call"],
-        st.session_state["remaining_stack"],
-    )
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("추정 승률", f"{equity * 100:.1f}%")
-    c2.metric("콜 필요 승률", f"{pot_odds * 100:.1f}%")
-    c3.metric("추천 액션", action)
-
-    st.info(reason)
-
-
-# =========================================================
-# 플랍 / 턴 / 리버
-# =========================================================
-
-st.subheader("5. 플랍·턴·리버 승률 및 액션 추천")
-
-all_card_codes = [
-    rank + suit
-    for rank in "23456789TJQKA"
-    for suit in SUITS
-]
-
-used_hero = set(hero_codes)
-
-available_board = [
-    code for code in all_card_codes
-    if code not in used_hero
-]
-
-board_label_map = {
-    card_label(code): code
-    for code in available_board
-}
-
-board_options = ["(선택 안 함)"] + list(board_label_map.keys())
-
-board_cols = st.columns(5)
-selected_board = []
-
-for i in range(5):
-    with board_cols[i]:
-        current_codes = st.session_state["board_codes"]
-
-        current_code = (
-            current_codes[i]
-            if i < len(current_codes)
-            else None
-        )
-
-        current_label = next(
-            (
-                label for label, code in board_label_map.items()
-                if code == current_code
-            ),
-            "(선택 안 함)",
-        )
-
-        label = st.selectbox(
-            f"보드 카드 {i + 1}",
-            board_options,
-            index=board_options.index(current_label),
-            key=f"board_select_{i}",
-        )
-
-        if label != "(선택 안 함)":
-            selected_board.append(board_label_map[label])
-
-st.session_state["board_codes"] = selected_board
-
-if len(selected_board) not in (0, 3, 4, 5):
-    st.warning(
-        "보드는 0장, 3장(플랍), 4장(턴), "
-        "5장(리버)으로 입력하세요."
-    )
-
-if len(set(selected_board)) != len(selected_board):
-    st.error("보드 카드가 중복되었습니다.")
-
-flop1, flop2, flop3 = st.columns(3)
-
-with flop1:
-    st.number_input(
-        "4. 현재 팟 금액",
-        min_value=0.0,
-        step=10.0,
-        key="flop_pot",
-    )
-
-with flop2:
-    st.number_input(
-        "4. 콜 필요 금액",
-        min_value=0.0,
-        step=10.0,
-        key="flop_call",
-    )
-
-with flop3:
-    st.select_slider(
-        "시뮬레이션 반복 횟수",
-        options=[500, 1000, 2500, 5000, 10000],
-        key="post_iterations",
-    )
-
-flop_buttons = st.columns(3)
-
-with flop_buttons[0]:
-    if st.button(
-        "4. 콜",
-        use_container_width=True,
-        disabled=not st.session_state["hand_started"],
-    ):
-        apply_call("flop")
-        st.rerun()
-
-with flop_buttons[1]:
-    if st.button(
-        "4. 폴드",
-        use_container_width=True,
-        disabled=not st.session_state["hand_started"],
-    ):
-        apply_fold()
-        st.rerun()
-
-with flop_buttons[2]:
-    if st.button(
-        "보드 기준 승률 계산",
-        type="primary",
-        use_container_width=True,
-    ):
-        if len(selected_board) not in (3, 4, 5):
-            st.error(
-                "플랍은 3장, 턴은 4장, 리버는 5장을 입력하세요."
-            )
-
-        elif len(set(selected_board)) != len(selected_board):
-            st.error("중복된 보드 카드가 있습니다.")
-
-        elif set(selected_board) & used_hero:
-            st.error("내 핸드와 보드에 중복 카드가 있습니다.")
-
-        else:
-            try:
-                board_cards = [
-                    Card.new(code)
-                    for code in selected_board
-                ]
-
-                with st.spinner("보드 기준 승률 계산 중..."):
-                    equity = estimate_equity(
-                        hero_cards,
-                        board_cards,
-                        opponents,
-                        int(st.session_state["post_iterations"]),
-                    )
-
-                st.session_state["equity"] = equity
-                st.session_state["equity_stage"] = "post"
-
-            except Exception as exc:
-                st.error(str(exc))
-
-if (
-    st.session_state["equity"] is not None
-    and st.session_state["equity_stage"] == "post"
-):
-    equity = st.session_state["equity"]
-
-    action, reason, pot_odds = get_recommendation(
-        equity,
-        st.session_state["flop_pot"],
-        st.session_state["flop_call"],
-        st.session_state["remaining_stack"],
-    )
-
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric("보드 기준 추정 승률", f"{equity * 100:.1f}%")
-    c2.metric("콜 필요 승률", f"{pot_odds * 100:.1f}%")
-    c3.metric("추천 액션", action)
-
-    st.info(reason)
-
-
-# =========================================================
-# 안내
-# =========================================================
-
-with st.expander("승률 계산 및 게임 상태 처리 안내"):
-    st.markdown("""
-    - 승률은 상대의 비공개 핸드를 무작위로 가정한 시뮬레이션 결과입니다.
-    - 핸드 시작 시 앤티를 내 시드에서 차감하고 팟에 더합니다.
-    - 콜 버튼은 입력된 콜 금액만큼 시드에서 차감하고 팟에 더합니다.
-    - 콜 처리 후 콜 금액 입력값은 0으로 초기화되어 중복 차감을 방지합니다.
-    - 게임 종료 또는 폴드 시 시작 플레이어가 다음 좌석으로 이동합니다.
-    - 핸드 종료 시 남은 시드는 유지됩니다.
-    - 게임 전체 초기화 버튼을 누르면 시드와 게임 설정이 초기화됩니다.
-    - 이 앱은 실제 온라인 포커 테이블에 연결되지 않습니다.
-    - 액션 추천은 참고용이며 승리나 수익을 보장하지 않습니다.
-    """)
