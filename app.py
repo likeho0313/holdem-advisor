@@ -201,14 +201,25 @@ for r in RANKS:
         card_code = f"{r}{s}"
         key_id = f"pick_card_{card_code}"
         has_red = s in ["h", "d"]
-        
-        bg_c = "#2a1215" if (is_dark and has_red) else ("#1e293b" if is_dark else ("#fef2f2" if has_red else "#ffffff"))
-        border_c = "#991b1b" if has_red else ("#475569" if is_dark else "#cbd5e1")
-            
+
+        # 카드 피커 전용 변수명 사용: C급 배경색 bg_c와 충돌 방지
+        picker_bg = (
+            "#2a1215" if (is_dark and has_red)
+            else "#1e293b" if is_dark
+            else "#fef2f2" if has_red
+            else "#ffffff"
+        )
+
+        border_c = (
+            "#991b1b" if has_red
+            else "#475569" if is_dark
+            else "#cbd5e1"
+        )
+
         dynamic_button_styles.append(f"""
             div[class*="st-key-{key_id}"] button,
             div[class*="st-key-{key_id}"] button:hover {{
-                background-color: {bg_c} !important;
+                background-color: {picker_bg} !important;
                 border: 1px solid {border_c} !important;
             }}
             div[class*="st-key-{key_id}"] button * {{
@@ -216,7 +227,6 @@ for r in RANKS:
                 font-size: 0.88rem !important;
             }}
         """)
-
 # 3) 무늬 원클릭 변경 버튼 스타일링
 all_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
 for p1, p2 in all_combos:
