@@ -67,9 +67,8 @@ theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드
 is_dark = (theme_mode == "🌙 다크 모드")
 
 
-
 # ==========================================
-# 3. 테마별 고대비 색상 체계 및 커스텀 CSS
+# 3. 테마별 고대비 색상 체계 설정
 # ==========================================
 if is_dark:
     app_bg = "#0f172a"
@@ -160,7 +159,7 @@ def format_card_md(rank, suit_code):
 
 dynamic_button_styles = []
 
-# 1) 169 핸드 표 스타일링
+# 1) 169 핸드 표 버튼 스타일링
 for r1 in RANKS:
     for r2 in RANKS:
         ht = hand_type(r1, r2)
@@ -254,7 +253,7 @@ for s in SUITS:
         }}
     """)
 
-# 4) ★ 동적 % 팟 프리셋 버튼 테마 반응형 스타일링 ★
+# 4) % 팟 프리셋 버튼 스타일링
 presets_vals = [25.0, 33.3, 50.0, 66.6, 75.0, 100.0, 150.0, 200.0]
 for idx, val in enumerate(presets_vals):
     key_id = f"preset_btn_{idx}"
@@ -277,6 +276,7 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
+# 전역 CSS 주입 (범례 뱃지용 클래스 강제 적용 포함)
 st.markdown(f"""
     <style>
     .stApp {{
@@ -297,6 +297,13 @@ st.markdown(f"""
     }}
     
     {" ".join(dynamic_button_styles)}
+
+    /* ★ 범례 전용 뱃지 강제 배경색 CSS ★ */
+    .badge-s {{ background-color: {bg_s} !important; color: {badge_txt} !important; padding: 2px 6px; border-radius: 3px; font-weight: bold; }}
+    .badge-a {{ background-color: {bg_a} !important; color: {badge_txt} !important; padding: 2px 6px; border-radius: 3px; font-weight: bold; }}
+    .badge-b {{ background-color: {bg_b} !important; color: {badge_txt} !important; padding: 2px 6px; border-radius: 3px; font-weight: bold; }}
+    .badge-c {{ background-color: {bg_c} !important; color: {badge_txt} !important; padding: 2px 6px; border-radius: 3px; font-weight: bold; }}
+    .badge-d {{ background-color: {bg_d} !important; color: {badge_txt} !important; padding: 2px 6px; border-radius: 3px; font-weight: bold; border: 1px solid #ccc; }}
 
     .card-badge {{
         display: inline-block;
@@ -403,6 +410,7 @@ def calculate_pot_odds_math(bet_pct):
 # ==========================================
 st.title("♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
 
+# ★ 수정한 범례 HTML 영역 (CSS 클래스 호출 방식) ★
 st.markdown(f"""
     <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
         <b>글씨 색상:</b> 
@@ -410,11 +418,11 @@ st.markdown(f"""
         <span style="color:{txt_suited};">초록(수딧)</span> | 
         <span style="color:{txt_off};">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
         <b>배경 색상:</b> 
-        <span style="background:{bg_s}; padding:2px 6px; border-radius:3px; color:{badge_txt};">S급</span> 
-        <span style="background:{bg_a}; padding:2px 6px; border-radius:3px; color:{badge_txt};">A급</span> 
-        <span style="background:{bg_b}; padding:2px 6px; border-radius:3px; color:{badge_txt};">B급</span> 
-        <span style="background:{bg_c}; padding:2px 6px; border-radius:3px; color:{badge_txt};">C급</span> 
-        <span style="background:{bg_d}; padding:2px 6px; border-radius:3px; color:{badge_txt}; border:1px solid #ccc;">D급</span>
+        <span class="badge-s">S급</span> 
+        <span class="badge-a">A급</span> 
+        <span class="badge-b">B급</span> 
+        <span class="badge-c">C급</span> 
+        <span class="badge-d">D급</span>
     </div>
 """, unsafe_allow_html=True)
 
@@ -554,7 +562,7 @@ st.markdown(f"**현재 확정 보드:** {b_html}", unsafe_allow_html=True)
 
 
 # ==========================================
-# 8. 팟 오즈 & 아웃츠 참조 수학 계산기 (테마 연동 HTML 카드)
+# 8. 팟 오즈 & 아웃츠 참조 수학 계산기
 # ==========================================
 st.markdown("---")
 st.subheader("📊 상대 베팅 크기 & 팟 오즈(Pot Odds) 원클릭 선택")
@@ -583,9 +591,7 @@ for idx, (label, val) in enumerate(presets):
 
 req_eq, pot_ratio_str, outs_req_flop, outs_turn = calculate_pot_odds_math(st.session_state.bet_ratio_pct)
 
-# ★ 테마 연동 커스텀 지표 박스 (라이트/다크 동적 대응) ★
 m_cols = st.columns(4)
-
 m_items = [
     ("선택한 베팅 크기", f"팟의 {st.session_state.bet_ratio_pct:.0f}%"),
     ("팟 오즈 비율 (Pot Odds)", pot_ratio_str),
