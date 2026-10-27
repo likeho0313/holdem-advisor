@@ -33,14 +33,14 @@ if "bet_ratio_pct" not in st.session_state:
 # ==========================================
 # 1. 사이드바: UI 테마 및 기본 옵션
 # ==========================================
-opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
-sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
-st.sidebar.markdown("---")
-
 st.sidebar.title("⚙️ 설정 & 게임 옵션")
 
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
+
+st.sidebar.markdown("---")
+opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
+sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
 
 
 # ==========================================
@@ -53,11 +53,11 @@ if is_dark:
     text_sub = "#94a3b8"
     border_col = "#334155"
     
-    bg_s = "#14532d"  # S급
-    bg_a = "#1e3a8a"  # A급
-    bg_b = "#713f12"  # B급
-    bg_c = "#581c87"  # C급
-    bg_d = "#1e293b"  # D급
+    bg_s = "#14532d"  # S급: 다크 에메랄드
+    bg_a = "#1e3a8a"  # A급: 다크 네이비
+    bg_b = "#713f12"  # B급: 다크 브론즈
+    bg_c = "#581c87"  # C급: 다크 퍼플 (#581c87)
+    bg_d = "#1e293b"  # D급: 다크 슬레이트 (#1e293b)
     
     badge_txt = "#ffffff"
     txt_pair = "#93c5fd"
@@ -70,11 +70,11 @@ else:
     text_sub = "#475569"
     border_col = "#cbd5e1"
     
-    bg_s = "#a7f3d0"  # S급
-    bg_a = "#bae6fd"  # A급
-    bg_b = "#fef08a"  # B급
-    bg_c = "#e9d5ff"  # C급
-    bg_d = "#ffffff"  # D급
+    bg_s = "#a7f3d0"  # S급: 파스텔 민트
+    bg_a = "#bae6fd"  # A급: 파스텔 블루
+    bg_b = "#fef08a"  # B급: 파스텔 옐로우
+    bg_c = "#e9d5ff"  # C급: 파스텔 퍼플 (#e9d5ff)
+    bg_d = "#ffffff"  # D급: 순백색 (#ffffff)
     
     badge_txt = "#0f172a"
     txt_pair = "#1d4ed8"
@@ -92,6 +92,7 @@ def hand_type(r1, r2):
         return r2 + r1 + "o"
 
 
+# ★ 핵심 수정: C급 핸드 범위를 정밀 재조정하여 #e9d5ff / #581c87 이 정확히 적용되도록 수정 ★
 def get_hand_colors(r1, r2):
     i1, i2 = RANKS.index(r1), RANKS.index(r2)
     txt_color = txt_pair if i1 == i2 else (txt_suited if i1 < i2 else txt_off)
@@ -100,30 +101,42 @@ def get_hand_colors(r1, r2):
     if i1 > i2:
         v1, v2 = v2, v1
         
+    # 페어 (Pair)
     if i1 == i2:
-        bg_color = bg_s if v1 >= 9 else (bg_a if v1 >= 6 else (bg_b if v1 >= 3 else bg_c))
-    elif i1 < i2:
-        if (v1 >= 11 and v2 >= 10) or (v1 == 12 and v2 >= 8):
-            bg_color = bg_s
-        elif (v1 >= 10 and v2 >= 8) or (v1 == 12 and v2 >= 4) or (v1 >= 8 and v2 >= 7 and v1 - v2 == 1):
-            bg_color = bg_a
-        elif (v1 >= 8 and v2 >= 5) or (v1 - v2 <= 2 and v2 >= 4):
-            bg_color = bg_b
-        elif v1 >= 7:
-            bg_color = bg_c
-        else:
-            bg_color = bg_d
-    else:
-        if (v1 == 12 and v2 >= 10) or (v1 == 11 and v2 == 10):
-            bg_color = bg_a
-        elif (v1 == 12 and v2 >= 7) or (v1 >= 10 and v2 >= 8):
-            bg_color = bg_b
-        elif (v1 >= 9 and v2 >= 6):
-            bg_color = bg_c
-        else:
-            bg_color = bg_d
+        if v1 >= 9:       # TT, JJ, QQ, KK, AA
+            return txt_color, bg_s
+        elif v1 >= 7:     # 88, 99
+            return txt_color, bg_a
+        elif v1 >= 4:     # 55, 66, 77
+            return txt_color, bg_b
+        else:             # 22, 33, 44 -> C급
+            return txt_color, bg_c
 
-    return txt_color, bg_color
+    # 수딧 (Suited)
+    elif i1 < i2:
+        if (v1 == 12 and v2 >= 10):  # AKs, AQs
+            return txt_color, bg_s
+        elif (v1 == 12 and v2 >= 8) or (v1 == 11 and v2 >= 9) or (v1 == 10 and v2 == 9) or (v1 == 9 and v2 == 8): # AJs, ATs, KQs, KJs, QJs, JTs
+            return txt_color, bg_a
+        elif (v1 == 12) or (v1 == 11 and v2 >= 8) or (v1 == 10 and v2 >= 8) or (v1 == 9 and v2 >= 7) or (v1 == 8 and v2 == 7): # A9s-A2s, KTs-K9s, QTs-Q9s, J9s-J8s, T9s, 98s
+            return txt_color, bg_b
+        elif (v1 >= 9) or (v1 >= 7 and v2 >= 5) or (v1 - v2 <= 2 and v2 >= 3): # K8s-K2s, Q8s-Q4s, J7s, T8s-T7s, 97s-96s, 87s-86s, 76s-75s, 65s-64s, 54s-53s, 43s -> C급
+            return txt_color, bg_c
+        else: # 72s, 62s, 52s, 42s, 32s 등 -> D급
+            return txt_color, bg_d
+
+    # 오프수딧 (Offsuit)
+    else:
+        if (v1 == 12 and v2 == 11):  # AKo
+            return txt_color, bg_s
+        elif (v1 == 12 and v2 >= 9) or (v1 == 11 and v2 == 10): # AQo, AJo, KQo
+            return txt_color, bg_a
+        elif (v1 == 12 and v2 >= 8) or (v1 == 11 and v2 >= 8) or (v1 == 10 and v2 >= 8): # ATo, KJo, KTo, QJo, QTo
+            return txt_color, bg_b
+        elif (v1 == 12) or (v1 == 11 and v2 >= 5) or (v1 == 10 and v2 >= 5) or (v1 == 9 and v2 >= 5) or (v1 == 8 and v2 >= 5) or (v1 - v2 <= 1 and v2 >= 4): # A9o-A2o, K9o-K7o, Q9o-Q7o, J9o-J7o, T9o-T7o, 98o, 87o, 76o, 65o -> C급
+            return txt_color, bg_c
+        else: # 72o, 83o, 92o 등 -> D급
+            return txt_color, bg_d
 
 
 def get_suit_md(suit_code):
@@ -142,7 +155,7 @@ def format_card_md(rank, suit_code):
 
 dynamic_button_styles = []
 
-# 169 핸드 표 스타일링
+# 1) 169 핸드 매트릭스 버튼 스타일링
 for r1 in RANKS:
     for r2 in RANKS:
         ht = hand_type(r1, r2)
@@ -178,7 +191,7 @@ for r1 in RANKS:
             }}
         """)
 
-# 원클릭 카드 피커 스타일링
+# 2) 원클릭 카드 피커 버튼 스타일링
 for r in RANKS:
     for s in SUITS:
         card_code = f"{r}{s}"
@@ -200,7 +213,7 @@ for r in RANKS:
             }}
         """)
 
-# 원클릭 무늬 변경 버튼 스타일링
+# 3) 무늬(Suit) 원클릭 변경 버튼 스타일링
 all_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
 for p1, p2 in all_combos:
     for prefix in ["quick_pair", "quick_off"]:
@@ -283,14 +296,6 @@ st.markdown(f"""
     .action-raise {{ color: #4ade80; }}
     .action-allin {{ color: #fb923c; }}
 
-    .math-info-box {{
-        background-color: {card_bg};
-        border: 1px solid {border_col};
-        border-radius: 8px;
-        padding: 12px;
-        margin-top: 10px;
-    }}
-
     @media screen and (max-height: 650px), (max-width: 920px) {{
         .block-container {{ padding: 0.5rem !important; }}
         .stButton button {{
@@ -354,15 +359,11 @@ def calculate_monte_carlo_equity(hero_cards, board_cards, opponents_count, itera
     return equity, wins/iterations, ties/iterations, (iterations - wins - ties)/iterations
 
 
-# 팟 오즈 및 필요 승률 계산 함수 (이미지 3 수식 기반)
 def calculate_pot_odds_math(bet_pct):
-    # Bet Size = B (as % of Pot P = 1.0)
-    # Pot Odds Ratio = (1 + B) : B  --> B / (1 + 2B) = Equity to Call
     b = bet_pct / 100.0
     equity_to_call = (b / (1.0 + 2.0 * b)) * 100.0
     ratio_first = round((1.0 + b) / b, 1) if b > 0 else 0
     
-    # Flop / Turn 기준 아웃츠 필요량 (4/2의 법칙)
     outs_flop = round(equity_to_call / 4.0, 1)
     outs_turn = round(equity_to_call / 2.0, 1)
     
@@ -525,13 +526,12 @@ st.markdown(f"**현재 확정 보드:** {b_html}", unsafe_allow_html=True)
 
 
 # ==========================================
-# 7. ★ [신규] 팟 오즈 & 아웃츠(Outs) 참조 수학 계산기 ★
+# 7. 팟 오즈 & 아웃츠(Outs) 참조 수학 계산기
 # ==========================================
 st.markdown("---")
 st.subheader("📊 상대 베팅 크기 & 팟 오즈(Pot Odds) 원클릭 선택")
 st.caption("팟 사이즈를 계산할 시간이 없을 때 상대방이 베팅한 상대적 크기를 선택하세요.")
 
-# 베팅 크기 비율 원클릭 프리셋
 preset_cols = st.columns(8)
 presets = [
     ("25% 팟", 25.0),
@@ -556,14 +556,12 @@ for idx, (label, val) in enumerate(presets):
 
 req_eq, pot_ratio_str, outs_req_flop, outs_turn = calculate_pot_odds_math(st.session_state.bet_ratio_pct)
 
-# 팟 오즈 요약 수치 카드 디스플레이
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("선택한 베팅 크기", f"팟의 {st.session_state.bet_ratio_pct:.0f}%")
 m2.metric("팟 오즈 비율 (Pot Odds)", pot_ratio_str)
 m3.metric("콜에 필요한 최소 승률", f"{req_eq:.1f}%")
 m4.metric("필요 아웃츠 (Flop/Turn)", f"약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개")
 
-# 드로우/아웃츠 참고 표 및 가이드 익스팬더
 with st.expander("📖 베팅 크기별 필요 승률 & 아웃츠(Outs) 가이드 참조표", expanded=False):
     st.markdown("""
     | Bet Size (% of Pot) | 필요 승률 (Equity to Call) | 필요 아웃츠 (Flop 기준) | 필요 아웃츠 (Turn 기준) |
@@ -600,9 +598,8 @@ else:
                 )
 
             eq_pct = equity * 100.0
-            ev_diff = eq_pct - req_eq  # 내 승률 - 콜 필요 승률
+            ev_diff = eq_pct - req_eq
             
-            # 수학적 진단 제안 생성
             if eq_pct >= req_eq + 15.0:
                 rec_action = "레이즈 / 올인 (Raise or All-in)"
                 action_class = "action-allin"
@@ -624,14 +621,12 @@ else:
                 math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
                 advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 이 상황에서 콜을 반복하면 지속적으로 칩이 감소하므로 **폴드(Fold)**가 수학적 정석입니다."
 
-            # 수치 디스플레이
             res1, res2, res3, res4 = st.columns(4)
             res1.metric("내 최종 승률 (Equity)", f"{eq_pct:.1f}%")
             res2.metric("콜 필요 승률 (Equity to Call)", f"{req_eq:.1f}%")
             res3.metric("기대값 차이 (EV Diff)", f"{ev_diff:+.1f}%p", delta=f"{ev_diff:+.1f}%p")
             res4.metric("추정 필요 아웃츠", f"약 {outs_req_flop:.0f}개")
 
-            # 메인 수학적 제안 카드
             st.markdown(f"""
                 <div class="action-card">
                     <div style="color: {text_sub}; font-size: 0.95rem;">수학적 판정 결과</div>
