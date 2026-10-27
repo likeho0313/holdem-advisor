@@ -30,12 +30,12 @@ if "board_cards" not in st.session_state:
 
 
 # ==========================================
-# 1. 사이드바: UI 테마 및 게임 옵션 설정
+# 1. 사이드바: UI 테마 (라이트 모드 기본값) 및 게임 옵션
 # ==========================================
 st.sidebar.title("⚙️ 설정 & 게임 옵션")
 
-# ★ 라이트 / 다크 모드 선택 ★
-theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["🌙 다크 모드", "☀️ 라이트 모드"], index=0)
+# ★ 요청사항 1: 라이트 모드를 디폴트(index=0)로 설정 ★
+theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
 
 st.sidebar.markdown("---")
@@ -46,26 +46,26 @@ sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options
 
 
 # ==========================================
-# 2. 테마별 고대비 색상 체계 및 CSS 정의
+# 2. 테마별 고대비 색상 체계 및 강력한 CSS 생성
 # ==========================================
 if is_dark:
-    app_bg = "#0e1117"
+    app_bg = "#0f172a"
     card_bg = "#1e293b"
     text_main = "#f8fafc"
     text_sub = "#94a3b8"
     border_col = "#334155"
     
-    # 169 표 배경색 (다크)
+    # 169 표 배경색 (다크 모드)
     bg_s = "#14532d"  # S급: 짙은 초록
     bg_a = "#1e3a8a"  # A급: 짙은 파랑
     bg_b = "#713f12"  # B급: 갈색/브론즈
     bg_c = "#334155"  # C급: 슬레이트
-    bg_d = "#0f172a"  # D급: 어두운 회색
+    bg_d = "#1e293b"  # D급: 차콜
     
-    # 글자색
-    txt_pair = "#60a5fa"    # 페어: 연파랑
-    txt_suited = "#4ade80"  # 수딧: 연초록
-    txt_off = "#fb923c"     # 오프수딧: 주황
+    # 글자색 (다크 모드 선명한 고대비)
+    txt_pair = "#93c5fd"    # 페어: 밝은 파랑
+    txt_suited = "#86efac"  # 수딧: 밝은 초록
+    txt_off = "#fdba74"     # 오프수딧: 밝은 주황
 else:
     app_bg = "#f8fafc"
     card_bg = "#ffffff"
@@ -73,17 +73,17 @@ else:
     text_sub = "#475569"
     border_col = "#cbd5e1"
     
-    # 169 표 배경색 (라이트)
-    bg_s = "#bbf7d0"  # S급: 파스텔 초록
-    bg_a = "#bfdbfe"  # A급: 파스텔 파랑
-    bg_b = "#fef08a"  # B급: 파스텔 노랑/브론즈
-    bg_c = "#e2e8f0"  # C급: 파스텔 회색
-    bg_d = "#f1f5f9"  # D급: 연회색
+    # 169 표 배경색 (라이트 모드 파스텔)
+    bg_s = "#bbf7d0"  # S급: 파스텔 민트
+    bg_a = "#bfdbfe"  # A급: 파스텔 블루
+    bg_b = "#fef08a"  # B급: 파스텔 옐로우
+    bg_c = "#e2e8f0"  # C급: 파스텔 그레이
+    bg_d = "#ffffff"  # D급: 순백색
     
-    # 글자색 (라이트 모드 고대비)
-    txt_pair = "#1d4ed8"    # 페어: 짙은 파랑
-    txt_suited = "#15803d"  # 수딧: 짙은 초록
-    txt_off = "#c2410c"     # 오프수딧: 짙은 주황
+    # 글자색 (라이트 모드 진한 고대비)
+    txt_pair = "#1d4ed8"    # 페어: 진한 파랑
+    txt_suited = "#15803d"  # 수딧: 진한 초록
+    txt_off = "#c2410c"     # 오프수딧: 진한 주황
 
 
 def hand_type(r1, r2):
@@ -130,7 +130,7 @@ def get_hand_colors(r1, r2):
     return txt_color, bg_color
 
 
-# Streamlit 버튼 요소 타겟팅 (흰색 상자 에러 완벽 해결)
+# ★ 핵심 수정: 와일드카드 와 후손 선택자로 스트림릿의 모든 덮어쓰기 무력화 ★
 dynamic_button_styles = []
 
 for r1 in RANKS:
@@ -156,17 +156,18 @@ for r1 in RANKS:
             extra_style = ""
             
         dynamic_button_styles.append(f"""
-            div.st-key-{key_id} > button,
-            div.st-key-{key_id} > button:hover,
-            div.st-key-{key_id} > button:focus,
-            div.st-key-{key_id} > button:active {{
+            div[class*="st-key-{key_id}"] button,
+            div[class*="st-key-{key_id}"] button:hover,
+            div[class*="st-key-{key_id}"] button:focus,
+            div[class*="st-key-{key_id}"] button:active {{
                 background-color: {btn_bg} !important;
                 border: 1px solid {btn_border} !important;
                 {extra_style}
             }}
-            div.st-key-{key_id} > button p,
-            div.st-key-{key_id} > button span,
-            div.st-key-{key_id} > button div {{
+            div[class*="st-key-{key_id}"] button *,
+            div[class*="st-key-{key_id}"] button p,
+            div[class*="st-key-{key_id}"] button span,
+            div[class*="st-key-{key_id}"] button div {{
                 color: {btn_txt} !important;
                 font-weight: bold !important;
             }}
@@ -218,7 +219,6 @@ st.markdown(f"""
     .action-raise {{ color: #4ade80; }}
     .action-allin {{ color: #fb923c; }}
 
-    /* 모바일 및 가로모드 패딩 및 폰트 최적화 */
     @media screen and (max-height: 650px), (max-width: 920px) {{
         .block-container {{
             padding: 0.5rem !important;
@@ -316,17 +316,17 @@ def get_action_recommendation(equity, pot, call_amount):
 st.title("♠️ 실시간 홀덤 승률 & 액션 어드바이저")
 
 st.markdown(f"""
-    <div style="font-size:0.82rem; margin-bottom:8px; color:{text_sub};">
+    <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
         <b>글씨 색상:</b> 
-        <span style="color:{txt_pair}; font-weight:bold;">파랑(페어)</span> | 
-        <span style="color:{txt_suited}; font-weight:bold;">초록(수딧)</span> | 
-        <span style="color:{txt_off}; font-weight:bold;">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
+        <span style="color:{txt_pair};">파랑(페어)</span> | 
+        <span style="color:{txt_suited};">초록(수딧)</span> | 
+        <span style="color:{txt_off};">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
         <b>배경 색상:</b> 
         <span style="background:{bg_s}; padding:2px 6px; border-radius:3px; color:#1e293b;">S급</span> 
         <span style="background:{bg_a}; padding:2px 6px; border-radius:3px; color:#1e293b;">A급</span> 
         <span style="background:{bg_b}; padding:2px 6px; border-radius:3px; color:#1e293b;">B급</span> 
         <span style="background:{bg_c}; padding:2px 6px; border-radius:3px; color:#1e293b;">C급</span> 
-        <span style="background:{bg_d}; padding:2px 6px; border-radius:3px; color:#1e293b;">D급</span>
+        <span style="background:{bg_d}; padding:2px 6px; border-radius:3px; color:#1e293b; border:1px solid #ccc;">D급</span>
     </div>
 """, unsafe_allow_html=True)
 
@@ -401,15 +401,15 @@ else:  # Offsuit
 
 
 # ==========================================
-# 6. 직관적 보드 카드 선택 패널 (중복 완전 차단)
+# 6. 원클릭 보드 선택 (이미 선택된 카드는 완전 제거)
 # ==========================================
 st.markdown("---")
 st.subheader("🃏 커뮤니티 보드 카드 선택 (플랍 · 턴 · 리버)")
 
-# 이미 선택된 카드 전체 집합 (내 핸드 + 보드 카드)
+# ★ 요청사항 3: 이미 선택된 카드(내 핸드 + 보드 카드) 집합 ★
 used_cards = set(hero_cards + st.session_state.board_cards)
 
-# 1) 현재 보드 카드 슬롯 디스플레이 및 삭제 기능
+# 1) 현재 선택된 보드 슬롯 디스플레이
 slot_names = ["플랍 1", "플랍 2", "플랍 3", "턴 (Turn)", "리버 (River)"]
 slot_cols = st.columns(5)
 
@@ -423,18 +423,17 @@ for i in range(5):
                 st.session_state.board_cards.pop(i)
                 st.rerun()
         else:
-            st.markdown("<div style='color:gray; padding:8px;'>[ 빈 슬롯 ]</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color:gray; padding:6px; font-size:0.85rem;'>[ 빈 슬롯 ]</div>", unsafe_allow_html=True)
 
-# 보드 초기화 버튼
 if st.session_state.board_cards:
     if st.button("🗑️ 보드 카드 전체 초기화", type="secondary"):
         st.session_state.board_cards = []
         st.rerun()
 
 st.markdown("<br>", unsafe_allow_html=True)
-st.write("👉 **아래 카드를 터치/클릭하면 보드 슬롯에 즉시 추가됩니다 (중복 자동 차단):**")
+st.write("👉 **원클릭 카드 피커 (이미 선택된 카드는 조회/선택되지 않음):**")
 
-# 2) 직관적인 원클릭 카드 피커 (4행 x 13열 문양별 그리드)
+# ★ 요청사항 3 & 4: 선택된 카드는 완전히 화면에서 가려서(숨겨서) 중복 선택 방지 및 초고속 선택 ★
 for s in SUITS:
     suit_row = st.columns([0.8] + [1]*13)
     suit_row[0].markdown(f"### {SUIT_SYMBOLS[s]}")
@@ -442,21 +441,22 @@ for s in SUITS:
         card_code = f"{r}{s}"
         btn_label = f"{r.replace('T', '10')}{SUIT_SYMBOLS[s]}"
         
-        # 이미 선택된 카드(내 핸드 또는 이미 보드에 있는 카드)는 비활성화
         is_used = card_code in used_cards
         is_full = len(st.session_state.board_cards) >= 5
         
-        disabled = is_used or is_full
-        
-        if suit_row[j+1].button(
-            "✓" if is_used else btn_label,
-            key=f"pick_card_{card_code}",
-            disabled=disabled,
-            use_container_width=True
-        ):
-            if len(st.session_state.board_cards) < 5:
-                st.session_state.board_cards.append(card_code)
-                st.rerun()
+        # 이미 선택된 카드는 선택창에서 보이지 않도록 숨김 처리
+        if is_used:
+            suit_row[j+1].markdown("<div style='min-height:36px;'></div>", unsafe_allow_html=True)
+        else:
+            if suit_row[j+1].button(
+                btn_label,
+                key=f"pick_card_{card_code}",
+                disabled=is_full,
+                use_container_width=True
+            ):
+                if len(st.session_state.board_cards) < 5:
+                    st.session_state.board_cards.append(card_code)
+                    st.rerun()
 
 board_cards = st.session_state.board_cards
 b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 없음)</span>"
