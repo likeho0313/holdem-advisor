@@ -4,79 +4,27 @@ import plotly.graph_objects as go
 from treys import Card, Deck, Evaluator
 
 # ==========================================
-# 0. 페이지 기본 설정 및 테마 CSS
+# 0. 페이지 기본 설정 및 모바일/가로모드 대응 CSS
 # ==========================================
 st.set_page_config(
     page_title="텍사스 홀덤 실시간 승률 & 액션 어드바이저",
     page_icon="♠️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
-
-# 홀덤 스타일의 어두운 테마 및 커스텀 카드 UI 스타일
-st.markdown("""
-    <style>
-    .main {
-        background-color: #0e1117;
-    }
-    .card-badge {
-        display: inline-block;
-        padding: 6px 12px;
-        font-size: 1.1rem;
-        font-weight: bold;
-        border-radius: 6px;
-        margin: 2px;
-        text-align: center;
-        border: 1px solid #333;
-    }
-    .suit-s, .suit-c { background-color: #262626; color: #ffffff; }
-    .suit-h, .suit-d { background-color: #3d0c0c; color: #ff4d4d; border: 1px solid #8b0000; }
-    
-    .action-card {
-        background-color: #1a1e24;
-        border-radius: 10px;
-        padding: 20px;
-        border: 2px solid #2d3748;
-        text-align: center;
-        margin-top: 10px;
-    }
-    .action-title {
-        font-size: 1.8rem;
-        font-weight: bold;
-        margin-bottom: 5px;
-    }
-    .action-fold { color: #ff4d4d; }
-    .action-check { color: #4dabf7; }
-    .action-call { color: #fcc419; }
-    .action-raise { color: #51cf66; }
-    .action-allin { color: #ff922b; }
-    </style>
-""", unsafe_allow_html=True)
-
-EVALUATOR = Evaluator()
 
 RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"]
 SUITS = ["s", "h", "d", "c"]
 SUIT_SYMBOLS = {"s": "♠", "h": "♥", "d": "♦", "c": "♣"}
 SUIT_NAMES = {"s": "스페이드(♠)", "h": "하트(♥)", "d": "다이아(♦)", "c": "클로버(♣)"}
 
+EVALUATOR = Evaluator()
 
 # ==========================================
-# 1. 헬퍼 및 유틸리티 함수
+# 1. 헬퍼 함수 & 핸드 승률 구간별 색상 정의
 # ==========================================
-def format_card_html(card_code):
-    """카드 코드를 색상 태그가 포함된 HTML 형태로 변환"""
-    if not card_code or len(card_code) < 2:
-        return ""
-    rank = card_code[0].replace("T", "10")
-    suit = card_code[1]
-    symbol = SUIT_SYMBOLS.get(suit, "")
-    css_class = f"suit-{suit}"
-    return f'<span class="card-badge {css_class}">{rank}{symbol}</span>'
-
-
 def hand_type(r1, r2):
-    """169개 프리플랍 표 표기법 변환"""
+    """169개 프리플랍 명칭 산출 (예: AA, AKs, AKo)"""
     i1, i2 = RANKS.index(r1), RANKS.index(r2)
     if i1 == i2:
         return r1 + r2
@@ -85,12 +33,68 @@ def hand_type(r1, r2):
     else:
         return r2 + r1 + "o"
 
+def get_hand_colors(r1, r2):
+    """
+    1) 글자 색상: 페어(파랑), 수딧(초록), 오프수딧(주황)
+    2) 배경 색상: 헤즈업 프리플랍 추정 승률 구간별 (S, A, B, C, D 티어)
+    """
+    i1, i2 = RANKS.index(r1), RANKS.index(r2)
+    
+    # 1. 글씨 색상 (네모 이모지 제거 대체)
+    if i1 == i2:
+        text_color = "#60a5fa"  # 페어: 연파랑
+    elif i1 < i2:
+        text_color = "#4ade80"  # 수딧(같은 무늬): 연초록
+    else:
+        text_color = "#fb923c"  # 오프수딧(다른 무늬): 연주황
+
+    # 2. 핸드 승률 범위에 따른 배경색 지정
+    v1, v2 = 12 - i1, 12 - i2
+    if i1 > i2:
+        v1, v2 = v2, v1
+    
+    if i1 == i2:  # 페어
+        if v1 >= 9:      # TT ~ AA (승률 ~68% 이상)
+            bg_color = "#14532d"  # S티어: 짙은 에메랄드
+        elif v1 >= 6:    # 77 ~ 99 (승률 ~62% 이상)
+            bg_color = "#1e3a8a"  # A티어: 짙은 네이비
+        elif v1 >= 3:    # 44 ~ 66
+            bg_color = "#713f12"  # B티어: 브론즈/다크 브라운
+        else:            # 22 ~ 33
+            bg_color = "#334155"  # C티어: 슬레이트 그레이
+    elif i1 < i2: # 수딧
+        if (v1 >= 11 and v2 >= 10) or (v1 == 12 and v2 >= 8): # AKs, AQs, AJs, ATs, KQs
+            bg_color = "#14532d"  # S티어
+        elif (v1 >= 10 and v2 >= 8) or (v1 == 12 and v2 >= 4) or (v1 >= 8 and v2 >= 7 and v1 - v2 == 1):
+            bg_color = "#1e3a8a"  # A티어
+        elif (v1 >= 8 and v2 >= 5) or (v1 - v2 <= 2 and v2 >= 4):
+            bg_color = "#713f12"  # B티어
+        elif v1 >= 7:
+            bg_color = "#334155"  # C티어
+        else:
+            bg_color = "#0f172a"  # D티어: 어두운 회색
+    else:        # 오프수딧
+        if (v1 == 12 and v2 >= 10) or (v1 == 11 and v2 == 10): # AKo, AQo, AJo, KQo
+            bg_color = "#1e3a8a"  # A티어
+        elif (v1 == 12 and v2 >= 7) or (v1 >= 10 and v2 >= 8): # ATo, KJo, QJo
+            bg_color = "#713f12"  # B티어
+        elif (v1 >= 9 and v2 >= 6):
+            bg_color = "#334155"  # C티어
+        else:
+            bg_color = "#0f172a"  # D티어
+
+    return text_color, bg_color
+
+def format_card_html(card_code):
+    if not card_code or len(card_code) < 2:
+        return ""
+    rank = card_code[0].replace("T", "10")
+    suit = card_code[1]
+    symbol = SUIT_SYMBOLS.get(suit, "")
+    css_class = f"suit-{suit}"
+    return f'<span class="card-badge {css_class}">{rank}{symbol}</span>'
 
 def calculate_monte_carlo_equity(hero_cards, board_cards, opponents_count, iterations=3000):
-    """
-    Treys Evaluator 기반 몬테카를로 승률 산출 함수
-    Treys Evaluator 점수는 낮을수록 높은 족보 (1 = 로열 플러시)
-    """
     known_cards = hero_cards + board_cards
     full_deck = Deck.GetFullDeck()
     deck = [c for c in full_deck if c not in known_cards]
@@ -98,9 +102,7 @@ def calculate_monte_carlo_equity(hero_cards, board_cards, opponents_count, itera
     missing_board_count = 5 - len(board_cards)
     draw_count = missing_board_count + (opponents_count * 2)
     
-    wins = 0.0
-    ties = 0.0
-    losses = 0.0
+    wins, ties, losses = 0.0, 0.0, 0.0
     
     for _ in range(iterations):
         drawn = random.sample(deck, draw_count)
@@ -117,93 +119,186 @@ def calculate_monte_carlo_equity(hero_cards, board_cards, opponents_count, itera
         
         best_opp_score = min(opp_scores)
         
-        if hero_score < best_opp_score:  # Hero 승리
+        if hero_score < best_opp_score:
             wins += 1.0
-        elif hero_score == best_opp_score:  # 타이 (팟 분할)
+        elif hero_score == best_opp_score:
             tying_count = opp_scores.count(hero_score) + 1
             ties += (1.0 / tying_count)
         else:
             losses += 1.0
             
     equity = (wins + ties) / iterations
-    win_rate = wins / iterations
-    tie_rate = ties / iterations
-    loss_rate = (iterations - wins - ties) / iterations
-    
-    return equity, win_rate, tie_rate, loss_rate
-
+    return equity, wins/iterations, ties/iterations, (iterations - wins - ties)/iterations
 
 def get_action_recommendation(equity, pot, call_amount):
-    """
-    승률과 팟 오즈 기반 실시간 액션 추천 알고리즘
-    """
     pot = max(0.0, float(pot))
     call_amount = max(0.0, float(call_amount))
-    
-    if pot + call_amount > 0:
-        pot_odds = call_amount / (pot + call_amount)
-    else:
-        pot_odds = 0.0
+    pot_odds = call_amount / (pot + call_amount) if pot + call_amount > 0 else 0.0
         
     if call_amount == 0:
         if equity >= 0.70:
             return "베팅 / 레이즈", "action-raise", "상대 대비 압도적인 승률입니다. 벨류 베팅을 적극 권장합니다.", pot_odds
         elif equity >= 0.45:
-            return "체크 / 프리베팅", "action-check", "안정적인 승률입니다. 체크로 보드를 확인하거나 플롯 베팅을 시도하세요.", pot_odds
+            return "체크 / 프리베팅", "action-check", "안정적인 승률입니다. 체크로 보드를 확인하세요.", pot_odds
         else:
-            return "체크", "action-check", "추가 비용이 들지 않습니다. 무료로 다음 카드를 확인하세요.", pot_odds
+            return "체크", "action-check", "추가 비용이 들지 않으므로 체크합니다.", pot_odds
     else:
         if equity < pot_odds:
-            return "폴드 권장", "action-fold", f"승률({equity*100:.1f}%)이 팟 오즈({pot_odds*100:.1f}%)보다 낮아 장기적으로 손해입니다.", pot_odds
+            return "폴드 권장", "action-fold", f"승률({equity*100:.1f}%)이 팟 오즈({pot_odds*100:.1f}%)보다 낮습니다.", pot_odds
         elif equity >= 0.75:
-            return "올인 / 강한 레이즈", "action-allin", "높은 승률과 기댓값을 가집니다. 올인 또는 강한 레이즈로 팟을 키우세요.", pot_odds
+            return "올인 / 강한 레이즈", "action-allin", "높은 승률과 기댓값을 가집니다. 팟을 크게 키우세요.", pot_odds
         elif equity >= pot_odds + 0.15:
-            return "레이즈 검토", "action-raise", "팟 오즈 대비 승률 여유가 충분합니다. 주도권을 가져오기 위한 레이즈를 고려하세요.", pot_odds
+            return "레이즈 검토", "action-raise", "팟 오즈 대비 승률 여유가 충분합니다. 주도권을 잡으세요.", pot_odds
         else:
-            return "콜 검토", "action-call", "팟 오즈 대비 최소 승률 조건은 충족하지만, 이익 폭이 크지 않습니다.", pot_odds
-
-
-# ==========================================
-# 2. 사이드바: 기본 플레이 설정
-# ==========================================
-st.sidebar.title("♠️ 옵션 & 베팅 설정")
-st.sidebar.markdown("---")
-
-opponents_count = st.sidebar.slider("상대 플레이어 수 (Opponents)", min_value=1, max_value=8, value=2)
-
-st.sidebar.markdown("### 💰 팟 및 베팅 정보 (선택)")
-pot_size = st.sidebar.number_input("현재 팟 금액 ($)", min_value=0.0, value=100.0, step=10.0)
-call_amount = st.sidebar.number_input("콜 필요 금액 ($)", min_value=0.0, value=20.0, step=5.0)
-
-st.sidebar.markdown("---")
-sim_iterations = st.sidebar.select_slider(
-    "정밀도 (시뮬레이션 횟수)",
-    options=[1000, 2500, 5000, 10000],
-    value=2500,
-    help="횟수가 높을수록 정밀하지만 계산 시간이 약간 늘어납니다."
-)
-
+            return "콜 검토", "action-call", "팟 오즈 대비 최소 승률 조건을 충족합니다.", pot_odds
 
 # ==========================================
-# 3. 메인 인터페이스
+# 2. 세션 상태 초기화 및 커스텀 CSS 설정
 # ==========================================
-st.title("♠️ 텍사스 홀덤 실시간 승률 & 액션 어드바이저")
-st.caption("복잡한 게임 진행 없이 핸드와 보드 카드 선택만으로 오류 없이 빠르게 승률과 추천 액션을 제공합니다.")
-
-# 세션 상태 초기화
 if "hero_card1" not in st.session_state:
     st.session_state.hero_card1 = "As"
 if "hero_card2" not in st.session_state:
     st.session_state.hero_card2 = "Ks"
 
-tab_matrix, tab_custom = st.tabs(["🔥 169 핸드 표로 빠른 선택", "🃏 직접 카드 선택 (Rank & Suit)"])
+# 동적 버튼 CSS 생성 (글자색 및 승률 구간 배경색)
+dynamic_button_styles = []
+for r1 in RANKS:
+    for r2 in RANKS:
+        ht = hand_type(r1, r2)
+        text_color, bg_color = get_hand_colors(r1, r2)
+        
+        # 내 카드로 선택된 핸드인지 판별
+        h1, h2 = st.session_state.hero_card1, st.session_state.hero_card2
+        selected_ht = hand_type(h1[0], h2[0])
+        is_selected = (ht == selected_ht)
+        
+        if is_selected:
+            dynamic_button_styles.append(f"""
+                button[aria-label="{ht}"] {{
+                    background-color: #dc2626 !important;
+                    color: #ffffff !important;
+                    border: 2px solid #f59e0b !important;
+                    font-weight: bold !important;
+                    box-shadow: 0 0 10px #f59e0b !important;
+                }}
+            """)
+        else:
+            dynamic_button_styles.append(f"""
+                button[aria-label="{ht}"] {{
+                    background-color: {bg_color} !important;
+                    color: {text_color} !important;
+                    border: 1px solid #334155 !important;
+                }}
+            """)
 
-# --- TAB 1: 169 매트릭스 선택 ---
-with tab_matrix:
-    st.markdown("##### 핸드 매트릭스 (클릭하여 빠른 적용)")
-    st.caption("🟦 페어 | 🟩 수딧(같은 무늬) | 🟧 오프수딧(다른 무늬)")
+# UI 및 모바일 가로모드 전용 최적화 CSS
+st.markdown(f"""
+    <style>
+    /* 기본 배경 */
+    .main {{ background-color: #0e1117; }}
     
-    # 13x13 매트릭스 그리드 생성
+    /* 169 매트릭스 버튼 컴팩트 스타일 */
+    div[data-testid="stHorizontal"] > div {{
+        padding: 0px 1px !important;
+    }}
+    .stButton button {{
+        width: 100% !important;
+        padding: 2px 0px !important;
+        font-size: 0.78rem !important;
+        min-height: 36px !important;
+        margin: 0px !important;
+        border-radius: 4px !important;
+    }}
+    
+    {" ".join(dynamic_button_styles)}
+
+    /* 카드 태그 스타일 */
+    .card-badge {{
+        display: inline-block;
+        padding: 4px 8px;
+        font-size: 1rem;
+        font-weight: bold;
+        border-radius: 5px;
+        margin: 1px;
+    }}
+    .suit-s, .suit-c {{ background-color: #1e293b; color: #ffffff; border: 1px solid #475569; }}
+    .suit-h, .suit-d {{ background-color: #450a0a; color: #f87171; border: 1px solid #991b1b; }}
+    
+    .action-card {{
+        background-color: #1e293b;
+        border-radius: 8px;
+        padding: 15px;
+        border: 1px solid #475569;
+        text-align: center;
+    }}
+    .action-title {{ font-size: 1.5rem; font-weight: bold; }}
+    .action-fold {{ color: #f87171; }}
+    .action-check {{ color: #38bdf8; }}
+    .action-call {{ color: #facc15; }}
+    .action-raise {{ color: #4ade80; }}
+    .action-allin {{ color: #fb923c; }}
+
+    /* 모바일 가로모드 (Landscape) UI 최적화 */
+    @media screen and (max-height: 600px), (max-width: 920px) {{
+        .block-container {{
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }}
+        .stButton button {{
+            padding: 1px 0px !important;
+            font-size: 0.70rem !important;
+            min-height: 28px !important;
+        }}
+        .card-badge {{
+            padding: 2px 5px !important;
+            font-size: 0.85rem !important;
+        }}
+        .action-card {{
+            padding: 8px !important;
+        }}
+        .action-title {{
+            font-size: 1.2rem !important;
+        }}
+    }}
+    </style>
+""", unsafe_allow_html=True)
+
+
+# ==========================================
+# 3. 사이드바 설정
+# ==========================================
+st.sidebar.title("♠️ 팟 & 게임 옵션")
+opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
+pot_size = st.sidebar.number_input("현재 팟 금액 ($)", min_value=0.0, value=100.0, step=10.0)
+call_amount = st.sidebar.number_input("콜 필요 금액 ($)", min_value=0.0, value=20.0, step=5.0)
+sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
+
+
+# ==========================================
+# 4. 메인 UI 및 핸드 선택
+# ==========================================
+st.title("♠️ 실시간 홀덤 승률 & 액션 어드바이저")
+
+tab_matrix, tab_custom = st.tabs(["🔥 169 핸드 표로 빠른 선택", "🃏 직접 무늬/숫자 지정"])
+
+# --- TAB 1: 169 매트릭스 표 ---
+with tab_matrix:
+    # 범례 표시 (글자색 및 승률 배경색)
+    st.markdown("""
+        <div style="font-size:0.8rem; margin-bottom:6px;">
+            <b>글씨 색상:</b> <span style="color:#60a5fa;">페어</span> | <span style="color:#4ade80;">수딧</span> | <span style="color:#fb923c;">오프수딧</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
+            <b>배경 색상(승률 범주):</b> 
+            <span style="background:#14532d; padding:2px 5px; border-radius:3px; color:#fff;">S급(≥65%)</span> 
+            <span style="background:#1e3a8a; padding:2px 5px; border-radius:3px; color:#fff;">A급(55~65%)</span> 
+            <span style="background:#713f12; padding:2px 5px; border-radius:3px; color:#fff;">B급(48~55%)</span> 
+            <span style="background:#334155; padding:2px 5px; border-radius:3px; color:#fff;">C급(40~48%)</span> 
+            <span style="background:#0f172a; padding:2px 5px; border-radius:3px; color:#fff;">D급(&lt;40%)</span>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 13x13 매트릭스 그리기 (네모 이모지 전면 제거)
     matrix_cols = st.columns([0.6] + [1]*13)
     matrix_cols[0].write("")
     for j, r in enumerate(RANKS):
@@ -214,9 +309,7 @@ with tab_matrix:
         m_row[0].markdown(f"**{r1}**")
         for j, r2 in enumerate(RANKS):
             ht = hand_type(r1, r2)
-            prefix = "🟦" if r1 == r2 else ("🟩" if RANKS.index(r1) < RANKS.index(r2) else "🟧")
-            
-            if m_row[j+1].button(f"{prefix}{ht}", key=f"mat_{r1}_{r2}", use_container_width=True):
+            if m_row[j+1].button(ht, key=f"mat_{r1}_{r2}", use_container_width=True):
                 if r1 == r2:
                     st.session_state.hero_card1 = f"{r1}s"
                     st.session_state.hero_card2 = f"{r2}c"
@@ -228,39 +321,34 @@ with tab_matrix:
                     st.session_state.hero_card2 = f"{r2}h"
                 st.rerun()
 
-# --- TAB 2: 직접 정밀 선택 ---
+# --- TAB 2: 직접 카스텀 지정 ---
 with tab_custom:
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("내 첫 번째 카드")
-        r1 = st.selectbox("숫자 (Rank 1)", RANKS, index=RANKS.index(st.session_state.hero_card1[0]))
-        s1 = st.selectbox("무늬 (Suit 1)", list(SUIT_NAMES.keys()), format_func=lambda x: SUIT_NAMES[x], index=SUITS.index(st.session_state.hero_card1[1]))
+        r1 = st.selectbox("첫 번째 카드 숫자", RANKS, index=RANKS.index(st.session_state.hero_card1[0]))
+        s1 = st.selectbox("첫 번째 카드 무늬", list(SUIT_NAMES.keys()), format_func=lambda x: SUIT_NAMES[x], index=SUITS.index(st.session_state.hero_card1[1]))
         st.session_state.hero_card1 = f"{r1}{s1}"
-        
     with c2:
-        st.subheader("내 두 번째 카드")
-        r2 = st.selectbox("숫자 (Rank 2)", RANKS, index=RANKS.index(st.session_state.hero_card2[0]))
-        s2 = st.selectbox("무늬 (Suit 2)", list(SUIT_NAMES.keys()), format_func=lambda x: SUIT_NAMES[x], index=SUITS.index(st.session_state.hero_card2[1]), key="s2_select")
+        r2 = st.selectbox("두 번째 카드 숫자", RANKS, index=RANKS.index(st.session_state.hero_card2[0]))
+        s2 = st.selectbox("두 번째 카드 무늬", list(SUIT_NAMES.keys()), format_func=lambda x: SUIT_NAMES[x], index=SUITS.index(st.session_state.hero_card2[1]), key="s2_sel")
         st.session_state.hero_card2 = f"{r2}{s2}"
 
-st.markdown("---")
-
 
 # ==========================================
-# 4. 커뮤니티 보드 카드 선택 (Flop, Turn, River)
+# 5. 커뮤니티 보드 선택 (내 핸드 카드 자동 제외)
 # ==========================================
-st.subheader("🃏 커뮤니티 보드 카드 선택")
+st.subheader("🃏 보드 카드 선택 (플랍 · 턴 · 리버)")
 
-# 사용 불가능한 카드 목록 생성용 전체 카드 리스트
-all_card_codes = [f"{r}{s}" for r in RANKS for s in SUITS]
+hero_cards = [st.session_state.hero_card1, st.session_state.hero_card2]
+
+# ★ 요구사항 구현: 내 핸드는 플랍, 턴, 리버 선택 옵션에서 완전 제외 ★
+available_deck = [f"{r}{s}" for r in RANKS for s in SUITS if f"{r}{s}" not in hero_cards]
 
 b_col1, b_col2, b_col3, b_col4, b_col5 = st.columns(5)
 
-board_inputs = []
-
-def card_selector(label_name, key_name, default_idx=0):
-    opts = ["선택 안함"] + [f"{r}{SUIT_SYMBOLS[s]}" for r in RANKS for s in SUITS]
-    selected = st.selectbox(label_name, opts, index=default_idx, key=key_name)
+def card_selector(label_name, key_name):
+    options = ["선택 안함"] + [f"{c[0].replace('T','10')}{SUIT_SYMBOLS[c[1]]}" for c in available_deck]
+    selected = st.selectbox(label_name, options, key=key_name)
     if selected != "선택 안함":
         rank = selected[:-1].replace("10", "T")
         sym = selected[-1]
@@ -268,90 +356,73 @@ def card_selector(label_name, key_name, default_idx=0):
         return f"{rank}{suit}"
     return None
 
-with b_col1:
-    f1 = card_selector("플랍 1", "f1_select")
-with b_col2:
-    f2 = card_selector("플랍 2", "f2_select")
-with b_col3:
-    f3 = card_selector("플랍 3", "f3_select")
-with b_col4:
-    t1 = card_selector("턴 (Turn)", "t1_select")
-with b_col5:
-    r1_card = card_selector("리버 (River)", "r1_select")
+with b_col1: f1 = card_selector("플랍 1", "f1_sel")
+with b_col2: f2 = card_selector("플랍 2", "f2_sel")
+with b_col3: f3 = card_selector("플랍 3", "f3_sel")
+with b_col4: t1 = card_selector("턴 (Turn)", "t1_sel")
+with b_col5: r1_card = card_selector("리버 (River)", "r1_sel")
 
 raw_board = [f1, f2, f3, t1, r1_card]
 board_cards = [c for c in raw_board if c is not None]
 
-# 선택 상태 요약 디스플레이
-hero_cards = [st.session_state.hero_card1, st.session_state.hero_card2]
-
-st.markdown("### 📌 현재 선택된 상태")
-h_html = "".join([format_card_html(c) for c in hero_cards])
-b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 카드 없음)</span>"
-
-st.markdown(f"**내 핸드:** {h_html} &nbsp;&nbsp;|&nbsp;&nbsp; **보드 카드:** {b_html}", unsafe_allow_html=True)
-
-
-# ==========================================
-# 5. 검증 및 승률 계산 실행
-# ==========================================
+# 선택 카드 현황 요약
 st.markdown("---")
+h_html = "".join([format_card_html(c) for c in hero_cards])
+b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 없음)</span>"
 
-all_selected = hero_cards + board_cards
-has_duplicates = len(all_selected) != len(set(all_selected))
+st.markdown(f"**선택 내 핸드:** {h_html} &nbsp;&nbsp;|&nbsp;&nbsp; **보드 카드:** {b_html}", unsafe_allow_html=True)
+
+
+# ==========================================
+# 6. 승률 계산 및 액션 추천
+# ==========================================
+has_board_duplicates = len(board_cards) != len(set(board_cards))
 invalid_board_count = len(board_cards) not in (0, 3, 4, 5)
 
-if has_duplicates:
-    st.error("⚠️ 중복된 카드가 선택되었습니다. 내 핸드 및 보드 카드가 서로 겹치지 않게 수정해 주세요.")
+if has_board_duplicates:
+    st.error("⚠️ 보드 카드에 중복된 카드가 존재합니다. 다른 카드를 선택해 주세요.")
 elif invalid_board_count:
-    st.warning("⚠️ 보드 카드는 **0장 (프리플랍)**, **3장 (플랍)**, **4장 (턴)**, **5장 (리버)** 중 하나여야 합니다.")
+    st.warning("⚠️ 보드 카드는 **0장(프리플랍)**, **3장(플랍)**, **4장(턴)**, **5장(리버)** 조합으로 선택해야 합니다.")
 else:
-    if st.button("🚀 실시간 승률 계산 및 액션 추천", type="primary", use_container_width=True):
+    if st.button("🚀 실시간 승률 및 액션 확인", type="primary", use_container_width=True):
         try:
-            with st.spinner("몬테카를로 시뮬레이션 계산 중..."):
+            with st.spinner("승률 시뮬레이션 계산 중..."):
                 hero_treys = [Card.new(c) for c in hero_cards]
                 board_treys = [Card.new(c) for c in board_cards]
                 
                 equity, win_rate, tie_rate, loss_rate = calculate_monte_carlo_equity(
                     hero_treys, board_treys, opponents_count, sim_iterations
                 )
-                
                 action, action_class, reason, pot_odds = get_action_recommendation(
                     equity, pot_size, call_amount
                 )
 
-            # 결과 디스플레이
-            st.subheader("📊 승률 계산 결과")
-            
-            res_col1, res_col2, res_col3, res_col4 = st.columns(4)
-            res_col1.metric("최종 승률 (Equity)", f"{equity*100:.1f}%")
-            res_col2.metric("순수 승리 확률", f"{win_rate*100:.1f}%")
-            res_col3.metric("비길 확률 (Split)", f"{tie_rate*100:.1f}%")
-            res_col4.metric("패배 확률", f"{loss_rate*100:.1f}%")
-            
-            # 추천 액션 메인 패널
+            res1, res2, res3 = st.columns([1, 1, 1])
+            res1.metric("최종 승률 (Equity)", f"{equity*100:.1f}%")
+            res2.metric("순수 승리 확률", f"{win_rate*100:.1f}%")
+            res3.metric("비길 확률 (Split)", f"{tie_rate*100:.1f}%")
+
             st.markdown(f"""
-                <div class="action-card">
-                    <div style="color: #8892b0; font-size: 1rem;">추천 행동 (Recommended Action)</div>
+                <div class="action-card" style="margin-top:10px;">
+                    <div style="color: #94a3b8; font-size: 0.9rem;">추천 액션</div>
                     <div class="action-title {action_class}">{action}</div>
-                    <div style="color: #e6f1ff; font-size: 1.05rem; margin-top: 10px;">{reason}</div>
+                    <div style="color: #e2e8f0; font-size: 0.95rem; margin-top: 5px;">{reason}</div>
                 </div>
             """, unsafe_allow_html=True)
-            
-            # 파이 차트 시각화
+
             fig = go.Figure(data=[go.Pie(
                 labels=['승리', '비김', '패배'],
                 values=[win_rate*100, tie_rate*100, loss_rate*100],
                 hole=.4,
-                marker_colors=['#51cf66', '#fcc419', '#ff4d4d']
+                marker_colors=['#4ade80', '#facc15', '#f87171']
             )])
             fig.update_layout(
-                title_text="승/무/패 예측 비율",
                 template="plotly_dark",
-                height=300,
-                margin=dict(l=20, r=20, t=40, b=20)
+                height=240,
+                margin=dict(l=10, r=10, t=20, b=20),
+                showlegend=True
             )
             st.plotly_chart(fig, use_container_width=True)
 
         except Exception as e:
-            st.error(f"계산 중 오류가 발생했습니다: {str(e)}")
+            st.error(f"계산 중 에러가 발생했습니다: {str(e)}")
