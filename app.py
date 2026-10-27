@@ -32,17 +32,17 @@ if "board_cards" not in st.session_state:
 # ==========================================
 # 1. 사이드바: UI 테마 (라이트 모드 디폴트) 및 게임 옵션
 # ==========================================
-st.sidebar.title("⚙️ 설정 & 게임 옵션")
-
-# 라이트 모드를 디폴트(index=0)로 지정
-theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
-is_dark = (theme_mode == "🌙 다크 모드")
-
 st.sidebar.markdown("---")
 opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
 pot_size = st.sidebar.number_input("현재 팟 금액 ($)", min_value=0.0, value=100.0, step=10.0)
 call_amount = st.sidebar.number_input("콜 필요 금액 ($)", min_value=0.0, value=20.0, step=5.0)
 sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
+
+st.sidebar.title("⚙️ 설정 & 게임 옵션")
+
+# 라이트 모드를 디폴트(index=0)로 지정
+theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
+is_dark = (theme_mode == "🌙 다크 모드")
 
 
 # ==========================================
