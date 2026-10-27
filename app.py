@@ -363,6 +363,43 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
+# ★ 5) 보드 삭제 및 전체 초기화 버튼 전용 테마별 고대비 스타일링 ★
+del_btn_bg = "#450a0a" if is_dark else "#fef2f2"
+del_btn_txt = "#f87171" if is_dark else "#991b1b"
+del_btn_border = "#991b1b" if is_dark else "#fca5a5"
+
+for i in range(5):
+    key_id = f"remove_board_{i}"
+    dynamic_button_styles.append(f"""
+        div[class*="st-key-{key_id}"] button,
+        div[class*="st-key-{key_id}"] button:hover,
+        div[class*="st-key-{key_id}"] button:focus {{
+            background-color: {del_btn_bg} !important;
+            border: 1px solid {del_btn_border} !important;
+        }}
+        div[class*="st-key-{key_id}"] button * {{
+            color: {del_btn_txt} !important;
+            font-weight: bold !important;
+        }}
+    """)
+
+reset_btn_bg = "#7f1d1d" if is_dark else "#fee2e2"
+reset_btn_txt = "#ffffff" if is_dark else "#991b1b"
+reset_btn_border = "#b91c1c" if is_dark else "#f87171"
+
+dynamic_button_styles.append(f"""
+    div[class*="st-key-reset_board_all"] button,
+    div[class*="st-key-reset_board_all"] button:hover,
+    div[class*="st-key-reset_board_all"] button:focus {{
+        background-color: {reset_btn_bg} !important;
+        border: 1px solid {reset_btn_border} !important;
+    }}
+    div[class*="st-key-reset_board_all"] button * {{
+        color: {reset_btn_txt} !important;
+        font-weight: bold !important;
+    }}
+""")
+
 # 전역 스타일 주입
 st.markdown(f"""
     <style>
@@ -620,7 +657,7 @@ for i in range(5):
             st.markdown("<div style='color:gray; padding:6px; font-size:0.85rem;'>[ 빈 슬롯 ]</div>", unsafe_allow_html=True)
 
 if st.session_state.board_cards:
-    if st.button("🗑️ 보드 카드 전체 초기화", type="secondary"):
+    if st.button("🗑️ 보드 카드 전체 초기화", key="reset_board_all"):
         st.session_state.board_cards = []
         st.rerun()
 
