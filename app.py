@@ -1,4 +1,6 @@
 import random
+import itertools
+from collections import Counter
 import streamlit as st
 import plotly.graph_objects as go
 from treys import Card, Deck, Evaluator
@@ -16,6 +18,9 @@ st.set_page_config(
 RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"]
 SUITS = ["s", "h", "d", "c"]
 SUIT_SYMBOLS = {"s": "♠", "h": "♥", "d": "♦", "c": "♣"}
+
+RANK_MAP = {'A': 14, 'K': 13, 'Q': 12, 'J': 11, 'T': 10, '9': 9, '8': 8, '7': 7, '6': 6, '5': 5, '4': 4, '3': 3, '2': 2}
+RANK_NAME = {14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: '10', 9: '9', 8: '8', 7: '7', 6: '6', 5: '5', 4: '4', 3: '3', 2: '2'}
 
 EVALUATOR = Evaluator()
 
@@ -155,6 +160,64 @@ def format_card_md(rank, suit_code):
     if suit_code in ["h", "d"]:
         return f":red[{rank_str}{symbol}]"
     return f"{rank_str}{symbol}"
+
+
+# 한국식 7포커 족보 계산 헬퍼 함수
+def eval_5cards_korean(combo):
+    ranks = sorted([RANK_MAP[c[0]] for c in combo], reverse=True)
+    suits = [c[1] for c in combo]
+    is_flush = (len(set(suits)) == 1)
+    
+    is_mountain = (ranks == [14, 13, 12, 11, 10])
+    is_back_straight = (ranks == [14, 5, 4, 3, 2])
+    is_reg_straight = (ranks[0]-ranks[1]==1 and ranks[1]-ranks[2]==1 and ranks[2]-ranks[3]==1 and ranks[3]-ranks[4]==1)
+    
+    counts = Counter(ranks)
+    freq = sorted([(cnt, r) for r, cnt in counts.items()], key=lambda x: (x[0], x[1]), reverse=True)
+    
+    if is_flush and is_mountain:
+        return (13, ranks), "👑 로얄 스트레이트 플러쉬"
+    elif is_flush and is_back_straight:
+        return (12, ranks), "🌈 백 스트레이트 플러쉬"
+    elif is_flush and is_reg_straight:
+        return (11, ranks[0]), f"🔥 스트레이트 플러쉬 ({RANK_NAME[ranks[0]]}-High)"
+    elif freq[0][0] == 4:
+        return (10, freq[0][1], freq[1][1]), f"💥 포카드 ({RANK_NAME[freq[0][1]]})"
+    elif freq[0][0] == 3 and freq[1][0] == 2:
+        return (9, freq[0][1], freq[1][1]), f"🏠 풀하우스 ({RANK_NAME[freq[0][1]]} & {RANK_NAME[freq[1][1]]})"
+    elif is_flush:
+        return (8, ranks), f"🎨 플러쉬 ({RANK_NAME[ranks[0]]}-High)"
+    elif is_mountain:
+        return (7, 14), "⛰️ 마운틴 (10, J, Q, K, A)"
+    elif is_back_straight:
+        return (6, 5), "👶 백스트레이트 (A, 2, 3, 4, 5)"
+    elif is_reg_straight:
+        return (5, ranks[0]), f"📏 스트레이트 ({RANK_NAME[ranks[0]]}-High)"
+    elif freq[0][0] == 3:
+        return (4, freq[0][1], [f[1] for f in freq[1:]]), f"☘️ 트리플 ({RANK_NAME[freq[0][1]]})"
+    elif freq[0][0] == 2 and freq[1][0] == 2:
+        return (3, freq[0][1], freq[1][1], freq[2][1]), f"✌️ 투 페어 ({RANK_NAME[freq[0][1]]} & {RANK_NAME[freq[1][1]]})"
+    elif freq[0][0] == 2:
+        return (2, freq[0][1], [f[1] for f in freq[1:]]), f"1️⃣ 원 페어 ({RANK_NAME[freq[0][1]]})"
+    else:
+        return (1, ranks), f"🃏 노 페어 ({RANK_NAME[ranks[0]]}-High)"
+
+
+def get_best_korean_hand(hero_cards, board_cards):
+    all_cards = hero_cards + board_cards
+    if len(all_cards) < 5:
+        return "보드 카드를 더 선택해주세요 (최소 5장 필요)"
+    
+    best_score = None
+    best_name = ""
+    
+    for combo in itertools.combinations(all_cards, 5):
+        score, name = eval_5cards_korean(combo)
+        if best_score is None or score > best_score:
+            best_score = score
+            best_name = name
+            
+    return best_name
 
 
 # 현재 선택된 핸드의 카드 무늬 정보
@@ -300,7 +363,7 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
-# ★ 범례 전용 CSS 클래스 및 스타일 분리 적용 ★
+# ★ 범례 및 전체 UI 스타일 주입 ★
 st.markdown(f"""
     <style>
     .stApp {{
@@ -322,7 +385,7 @@ st.markdown(f"""
     
     {" ".join(dynamic_button_styles)}
 
-    /* 범례 전용 뱃지 스타일 정의 */
+    /* 범례 전용 뱃지 스타일 */
     .tier-badge {{
         display: inline-block;
         padding: 3px 8px;
@@ -442,7 +505,6 @@ def calculate_pot_odds_math(bet_pct):
 # ==========================================
 st.title("♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
 
-# 정식 CSS 클래스 매핑 적용
 st.markdown(f"""
     <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
         <b>글씨 색상:</b> 
@@ -535,7 +597,7 @@ else:  # Offsuit
 
 
 # ==========================================
-# 7. 원클릭 보드 선택
+# 7. 원클릭 보드 선택 및 7포커 족보 자동 판정
 # ==========================================
 st.markdown("---")
 st.subheader("🃏 커뮤니티 보드 카드 선택 (플랍 · 턴 · 리버)")
@@ -591,6 +653,16 @@ for s in SUITS:
 board_cards = st.session_state.board_cards
 b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 없음)</span>"
 st.markdown(f"**현재 확정 보드:** {b_html}", unsafe_allow_html=True)
+
+# ★ 7포커 족보 자동 표기 배너 (5장 이상 조합 가능 시) ★
+if len(hero_cards + board_cards) >= 5:
+    best_korean_hand = get_best_korean_hand(hero_cards, board_cards)
+    st.markdown(f"""
+        <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:8px; padding:12px 18px; margin-top:12px; text-align:center;">
+            <span style="color:{text_sub}; font-size:0.95rem; font-weight:bold;">🏆 현재 최고 5카드 족보 판정 (7포커 족보 기준):</span>
+            <span style="color:#f59e0b; font-size:1.3rem; font-weight:bold; margin-left:12px;">{best_korean_hand}</span>
+        </div>
+    """, unsafe_allow_html=True)
 
 
 # ==========================================
