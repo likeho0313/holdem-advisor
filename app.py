@@ -102,7 +102,7 @@ else:
     bg_s = "#a7f3d0"  # S급: 파스텔 민트
     bg_a = "#bae6fd"  # A급: 파스텔 블루
     bg_b = "#fef08a"  # B급: 파스텔 옐로우
-    bg_c = "#e9d5ff"  # C급: 파스텔 퍼플 (#e9d5ff)
+    bg_c = "#e9d5ff"  # C급: 파스텔 퍼플
     bg_d = "#ffffff"  # D급: 순백색
     
     badge_txt = "#0f172a"
@@ -114,14 +114,6 @@ else:
     btn_preset_active_txt = "#ffffff"
     btn_preset_inactive_bg = "#ffffff"
     btn_preset_inactive_txt = "#0f172a"
-
-
-# ★ 핵심 1: 독립된 HTML 뱃지 변수 생성 (C급 포함 100% 색상 강제 지정) ★
-badge_s_html = f'<span style="background-color:{bg_s} !important; color:{badge_txt} !important; padding:3px 8px; border-radius:4px; font-weight:bold; display:inline-block;">S급</span>'
-badge_a_html = f'<span style="background-color:{bg_a} !important; color:{badge_txt} !important; padding:3px 8px; border-radius:4px; font-weight:bold; display:inline-block;">A급</span>'
-badge_b_html = f'<span style="background-color:{bg_b} !important; color:{badge_txt} !important; padding:3px 8px; border-radius:4px; font-weight:bold; display:inline-block;">B급</span>'
-badge_c_html = f'<span style="background-color:{bg_c} !important; color:{badge_txt} !important; padding:3px 8px; border-radius:4px; font-weight:bold; display:inline-block;">C급</span>'
-badge_d_html = f'<span style="background-color:{bg_d} !important; color:{badge_txt} !important; border:1px solid #cbd5e1; padding:3px 8px; border-radius:4px; font-weight:bold; display:inline-block;">D급</span>'
 
 
 def hand_type(r1, r2):
@@ -165,7 +157,7 @@ def format_card_md(rank, suit_code):
     return f"{rank_str}{symbol}"
 
 
-# 현재 내 핸드의 무늬 추출 (하이라이트 비교용)
+# 현재 선택된 핸드의 카드 무늬 정보
 cur_h1 = st.session_state.hero_card1
 cur_h2 = st.session_state.hero_card2
 cur_s1 = cur_h1[1] if len(cur_h1) > 1 else "s"
@@ -230,7 +222,7 @@ for r in RANKS:
             }}
         """)
 
-# ★ 핵심 2: 무늬 원클릭 변경 버튼 하이라이트 스타일링 ★
+# 3) 무늬 원클릭 변경 버튼 선택 하이라이트 스타일링
 all_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
 for p1, p2 in all_combos:
     for prefix in ["quick_pair", "quick_off"]:
@@ -308,6 +300,7 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
+# ★ 범례 전용 CSS 클래스 및 스타일 분리 적용 ★
 st.markdown(f"""
     <style>
     .stApp {{
@@ -328,6 +321,21 @@ st.markdown(f"""
     }}
     
     {" ".join(dynamic_button_styles)}
+
+    /* 범례 전용 뱃지 스타일 정의 */
+    .tier-badge {{
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.85rem;
+        margin: 0 2px;
+    }}
+    .tier-badge-s {{ background-color: {bg_s} !important; color: {badge_txt} !important; }}
+    .tier-badge-a {{ background-color: {bg_a} !important; color: {badge_txt} !important; }}
+    .tier-badge-b {{ background-color: {bg_b} !important; color: {badge_txt} !important; }}
+    .tier-badge-c {{ background-color: {bg_c} !important; color: {badge_txt} !important; }}
+    .tier-badge-d {{ background-color: {bg_d} !important; color: {badge_txt} !important; border: 1px solid {border_col} !important; }}
 
     .card-badge {{
         display: inline-block;
@@ -434,14 +442,19 @@ def calculate_pot_odds_math(bet_pct):
 # ==========================================
 st.title("♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
 
-# 분리된 전용 HTML 뱃지 변수로 범례 디스플레이
+# 정식 CSS 클래스 매핑 적용
 st.markdown(f"""
     <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
         <b>글씨 색상:</b> 
         <span style="color:{txt_pair};">파랑(페어)</span> | 
         <span style="color:{txt_suited};">초록(수딧)</span> | 
         <span style="color:{txt_off};">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
-        <b>배경 색상:</b> {badge_s_html} {badge_a_html} {badge_b_html} {badge_c_html} {badge_d_html}
+        <b>배경 색상:</b> 
+        <span class="tier-badge tier-badge-s">S급</span>
+        <span class="tier-badge tier-badge-a">A급</span>
+        <span class="tier-badge tier-badge-b">B급</span>
+        <span class="tier-badge tier-badge-c">C급</span>
+        <span class="tier-badge tier-badge-d">D급</span>
     </div>
 """, unsafe_allow_html=True)
 
