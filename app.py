@@ -363,7 +363,7 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
-# ★ 범례 및 전체 UI 스타일 주입 ★
+# 전역 스타일 주입
 st.markdown(f"""
     <style>
     .stApp {{
@@ -654,7 +654,7 @@ board_cards = st.session_state.board_cards
 b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 없음)</span>"
 st.markdown(f"**현재 확정 보드:** {b_html}", unsafe_allow_html=True)
 
-# ★ 7포커 족보 자동 표기 배너 (5장 이상 조합 가능 시) ★
+# 7포커 족보 자동 표기 배너 (5장 이상 조합 가능 시)
 if len(hero_cards + board_cards) >= 5:
     best_korean_hand = get_best_korean_hand(hero_cards, board_cards)
     st.markdown(f"""
@@ -729,78 +729,77 @@ with st.expander("📖 베팅 크기별 필요 승률 & 아웃츠(Outs) 가이�
 
 
 # ==========================================
-# 9. 실시간 승률 및 수학적 진단 제안
+# 9. 실시간 승률 및 수학적 진단 제안 (자동 연산 반영)
 # ==========================================
 st.markdown("---")
+st.subheader("🚀 실시간 승률 계산 및 수학적 진단 결과")
 
 invalid_board_count = len(board_cards) not in (0, 3, 4, 5)
 
 if invalid_board_count:
     st.warning("⚠️ 보드 카드는 **0장(프리플랍)**, **3장(플랍)**, **4장(턴)**, **5장(리버)** 조합일 때 정확히 계산됩니다.")
 else:
-    if st.button("🚀 실시간 승률 계산 및 수학적 진단 확인", type="primary", use_container_width=True):
-        try:
-            with st.spinner("몬테카를로 승률 계산 및 수학적 가치 진단 중..."):
-                hero_treys = [Card.new(c) for c in hero_cards]
-                board_treys = [Card.new(c) for c in board_cards]
-                
-                equity, win_rate, tie_rate, loss_rate = calculate_monte_carlo_equity(
-                    hero_treys, board_treys, opponents_count, sim_iterations
-                )
+    try:
+        hero_treys = [Card.new(c) for c in hero_cards]
+        board_treys = [Card.new(c) for c in board_cards]
+        
+        equity, win_rate, tie_rate, loss_rate = calculate_monte_carlo_equity(
+            hero_treys, board_treys, opponents_count, sim_iterations
+        )
 
-            eq_pct = equity * 100.0
-            ev_diff = eq_pct - req_eq
-            
-            if eq_pct >= req_eq + 15.0:
-                rec_action = "레이즈 / 올인 (Raise or All-in)"
-                action_class = "action-allin"
-                math_status = f"🔥 **압도적 +EV 상태 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-                advice_text = f"내 승률이 콜 필요 승률보다 **+{ev_diff:.1f}%p** 높습니다. 단순히 콜만 하는 것은 손해이며, 레이즈로 팟 크기를 대폭 키워야 하는 수학적 최고 가치 구간입니다."
-            elif eq_pct >= req_eq:
-                rec_action = "콜 추천 (Call)"
-                action_class = "action-call"
-                math_status = f"✅ **양의 기대값(+EV) 콜 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-                advice_text = f"내 승률이 팟 오즈가 요구하는 최소 승률을 **+{ev_diff:.1f}%p** 웃돌고 있습니다. 수학적으로 장기 반복 시 무조건 칩을 버는 구간이므로 **콜(Call)**이 적절합니다."
-            elif eq_pct >= req_eq - 5.0:
-                rec_action = "콜 또는 폴드 (Marginal Call / Fold)"
-                action_class = "action-check"
-                math_status = f"⚠️ **경계선 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-                advice_text = f"승률이 필요 승률에 비해서 **{abs(ev_diff):.1f}%p** 부족합니다. 상대의 베팅 성향이 블러핑이 많거나 후속 턴/리버에서 크게 먹을 수 있는 포지션이라면 콜을 고려할 수 있습니다."
-            else:
-                rec_action = "폴드 권장 (Fold)"
-                action_class = "action-fold"
-                math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-                advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 이 상황에서 콜을 반복하면 지속적으로 칩이 감소하므로 **폴드(Fold)**가 수학적 정석입니다."
+        eq_pct = equity * 100.0
+        ev_diff = eq_pct - req_eq
+        
+        if eq_pct >= req_eq + 15.0:
+            rec_action = "레이즈 / 올인 (Raise or All-in)"
+            action_class = "action-allin"
+            math_status = f"🔥 **압도적 +EV 상태 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            advice_text = f"내 승률이 콜 필요 승률보다 **+{ev_diff:.1f}%p** 높습니다. 단순히 콜만 하는 것은 손해이며, 레이즈로 팟 크기를 대폭 키워야 하는 수학적 최고 가치 구간입니다."
+        elif eq_pct >= req_eq:
+            rec_action = "콜 추천 (Call)"
+            action_class = "action-call"
+            math_status = f"✅ **양의 기대값(+EV) 콜 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            advice_text = f"내 승률이 팟 오즈가 요구하는 최소 승률을 **+{ev_diff:.1f}%p** 웃돌고 있습니다. 수학적으로 장기 반복 시 무조건 칩을 버는 구간이므로 **콜(Call)**이 적절합니다."
+        elif eq_pct >= req_eq - 5.0:
+            rec_action = "콜 또는 폴드 (Marginal Call / Fold)"
+            action_class = "action-check"
+            math_status = f"⚠️ **경계선 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            advice_text = f"승률이 필요 승률에 비해서 **{abs(ev_diff):.1f}%p** 부족합니다. 상대의 베팅 성향이 블러핑이 많거나 후속 턴/리버에서 크게 먹을 수 있는 포지션이라면 콜을 고려할 수 있습니다."
+        else:
+            rec_action = "폴드 권장 (Fold)"
+            action_class = "action-fold"
+            math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 이 상황에서 콜을 반복하면 지속적으로 칩이 감소하므로 **폴드(Fold)**가 수학적 정석입니다."
 
-            res1, res2, res3, res4 = st.columns(4)
-            res1.metric("내 최종 승률 (Equity)", f"{eq_pct:.1f}%")
-            res2.metric("콜 필요 승률 (Equity to Call)", f"{req_eq:.1f}%")
-            res3.metric("기대값 차이 (EV Diff)", f"{ev_diff:+.1f}%p", delta=f"{ev_diff:+.1f}%p")
-            res4.metric("추정 필요 아웃츠", f"약 {outs_req_flop:.0f}개")
+        res1, res2, res3, res4 = st.columns(4)
+        res1.metric("내 최종 승률 (Equity)", f"{eq_pct:.1f}%")
+        res2.metric("콜 필요 승률 (Equity to Call)", f"{req_eq:.1f}%")
+        res3.metric("기대값 차이 (EV Diff)", f"{ev_diff:+.1f}%p", delta=f"{ev_diff:+.1f}%p")
+        res4.metric("추정 필요 아웃츠", f"약 {outs_req_flop:.0f}개")
 
-            st.markdown(f"""
-                <div class="action-card">
-                    <div style="color: {text_sub}; font-size: 0.95rem;">수학적 판정 결과</div>
-                    <div class="action-title {action_class}">{rec_action}</div>
-                    <div style="margin-top: 8px; font-size: 1.05rem;">{math_status}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class="action-card">
+                <div style="color: {text_sub}; font-size: 0.95rem;">수학적 판정 결과</div>
+                <div class="action-title {action_class}">{rec_action}</div>
+                <div style="margin-top: 8px; font-size: 1.05rem;">{math_status}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
-            st.info(f"💡 **수학적 가치 진단 상세:**\n\n{advice_text}")
+        st.info(f"💡 **수학적 가치 진단 상세:**\n\n{advice_text}")
 
-            fig = go.Figure(data=[go.Pie(
-                labels=['승리', '비김', '패배'],
-                values=[win_rate*100, tie_rate*100, loss_rate*100],
-                hole=.4,
-                marker_colors=['#4ade80', '#facc15', '#f87171']
-            )])
-            fig.update_layout(
-                template="plotly_dark" if is_dark else "plotly_white",
-                height=250,
-                margin=dict(l=10, r=10, t=20, b=20),
-                showlegend=True
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure(data=[go.Pie(
+            labels=['승리', '비김', '패배'],
+            values=[win_rate*100, tie_rate*100, loss_rate*100],
+            hole=.4,
+            marker_colors=['#4ade80', '#facc15', '#f87171']
+        )])
+        fig.update_layout(
+            template="plotly_dark" if is_dark else "plotly_white",
+            height=250,
+            margin=dict(l=10, r=10, t=20, b=20),
+            showlegend=True
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-        except Exception as e:
-            st.error(f"계산 도중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        st.error(f"계산 도중 오류가 발생했습니다: {str(e)}")
