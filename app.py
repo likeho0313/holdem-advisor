@@ -33,14 +33,14 @@ if "bet_ratio_pct" not in st.session_state:
 # ==========================================
 # 1. 사이드바: UI 테마 및 기본 옵션
 # ==========================================
+st.sidebar.markdown("---")
+opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
+sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
+
 st.sidebar.title("⚙️ 설정 & 게임 옵션")
 
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
-
-st.sidebar.markdown("---")
-opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
-sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
 
 
 # ==========================================
