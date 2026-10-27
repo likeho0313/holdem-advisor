@@ -34,7 +34,7 @@ if "board_cards" not in st.session_state:
 # ==========================================
 st.sidebar.title("⚙️ 설정 & 게임 옵션")
 
-# ★ 라이트 모드를 디폴트(index=0)로 지정 ★
+# 라이트 모드를 디폴트(index=0)로 설정
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
 
@@ -62,7 +62,7 @@ if is_dark:
     bg_c = "#334155"  # C급
     bg_d = "#1e293b"  # D급
     
-    # 글자색 (다크 모드 선명한 고대비)
+    # 표 글자색 (다크 모드)
     txt_pair = "#93c5fd"    # 페어: 밝은 파랑
     txt_suited = "#86efac"  # 수딧: 밝은 초록
     txt_off = "#fdba74"     # 오프수딧: 밝은 주황
@@ -80,7 +80,7 @@ else:
     bg_c = "#e2e8f0"  # C급
     bg_d = "#ffffff"  # D급
     
-    # 글자색 (라이트 모드 고대비)
+    # 표 글자색 (라이트 모드)
     txt_pair = "#1d4ed8"    # 페어: 진한 파랑
     txt_suited = "#15803d"  # 수딧: 진한 초록
     txt_off = "#c2410c"     # 오프수딧: 진한 주황
@@ -130,6 +130,13 @@ def get_hand_colors(r1, r2):
     return txt_color, bg_color
 
 
+# 마크다운 개별 색상 처리를 위한 심볼 헬퍼 (하트/다이아만 빨간색)
+def get_suit_md(suit_code):
+    if suit_code in ["h", "d"]:
+        return f":red[{SUIT_SYMBOLS[suit_code]}]"
+    return SUIT_SYMBOLS[suit_code]
+
+
 dynamic_button_styles = []
 
 # 1) 169 핸드 매트릭스 버튼 스타일링
@@ -168,20 +175,15 @@ for r1 in RANKS:
             }}
         """)
 
-# 2) ★ 원클릭 카드 피커 버튼 무늬별 색상 타겟팅 (하트/다이아=빨강, 스페이드/클로버=흰색/검정) ★
+# 2) 원클릭 카드 피커 버튼 배경 및 테두리 설정
 for r in RANKS:
     for s in SUITS:
         card_code = f"{r}{s}"
         key_id = f"pick_card_{card_code}"
+        has_red = s in ["h", "d"]
         
-        if s in ["h", "d"]:  # Hearts / Diamonds -> 선명한 빨간색
-            txt_c = "#ff6b6b" if is_dark else "#dc2626"
-            bg_c = "#2a1215" if is_dark else "#fef2f2"
-            border_c = "#991b1b" if is_dark else "#fca5a5"
-        else:  # Spades / Clubs -> 고대비 흰색/다크
-            txt_c = "#ffffff" if is_dark else "#0f172a"
-            bg_c = "#1e293b" if is_dark else "#ffffff"
-            border_c = "#475569" if is_dark else "#cbd5e1"
+        bg_c = "#2a1215" if (is_dark and has_red) else ("#1e293b" if is_dark else ("#fef2f2" if has_red else "#ffffff"))
+        border_c = "#991b1b" if has_red else ("#475569" if is_dark else "#cbd5e1")
             
         dynamic_button_styles.append(f"""
             div[class*="st-key-{key_id}"] button,
@@ -190,19 +192,16 @@ for r in RANKS:
                 border: 1px solid {border_c} !important;
             }}
             div[class*="st-key-{key_id}"] button * {{
-                color: {txt_c} !important;
                 font-weight: bold !important;
                 font-size: 0.88rem !important;
             }}
         """)
 
-# 3) ★ 무늬(Suit) 원클릭 변경 버튼 색상 타겟팅 ★
+# 3) 무늬(Suit) 원클릭 변경 버튼 배경 및 테두리 설정 (글자색 지정 제외 -> 마크다운이 직접 제어)
 all_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
 for p1, p2 in all_combos:
     for prefix in ["quick_pair", "quick_off"]:
         key_id = f"{prefix}_{p1}_{p2}"
-        has_red = (p1 in ["h", "d"]) or (p2 in ["h", "d"])
-        txt_c = ("#ff6b6b" if is_dark else "#dc2626") if has_red else ("#ffffff" if is_dark else "#0f172a")
         bg_c = "#1e293b" if is_dark else "#ffffff"
         border_c = "#475569" if is_dark else "#cbd5e1"
         
@@ -213,7 +212,6 @@ for p1, p2 in all_combos:
                 border: 1px solid {border_c} !important;
             }}
             div[class*="st-key-{key_id}"] button * {{
-                color: {txt_c} !important;
                 font-weight: bold !important;
             }}
         """)
@@ -221,7 +219,6 @@ for p1, p2 in all_combos:
 for s in SUITS:
     key_id = f"quick_suited_{s}"
     has_red = s in ["h", "d"]
-    txt_c = ("#ff6b6b" if is_dark else "#dc2626") if has_red else ("#ffffff" if is_dark else "#0f172a")
     bg_c = "#2a1215" if (is_dark and has_red) else ("#1e293b" if is_dark else ("#fef2f2" if has_red else "#ffffff"))
     border_c = "#991b1b" if has_red else ("#475569" if is_dark else "#cbd5e1")
     
@@ -232,7 +229,6 @@ for s in SUITS:
             border: 1px solid {border_c} !important;
         }}
         div[class*="st-key-{key_id}"] button * {{
-            color: {txt_c} !important;
             font-weight: bold !important;
         }}
     """)
@@ -414,7 +410,7 @@ for i, r1 in enumerate(RANKS):
 
 
 # ==========================================
-# 5. 선택 핸드 및 원클릭 무늬 프리셋
+# 5. 선택 핸드 및 원클릭 무늬 프리셋 (개별 색상 마크다운 적용)
 # ==========================================
 st.markdown("---")
 h1, h2 = st.session_state.hero_card1, st.session_state.hero_card2
@@ -433,7 +429,8 @@ if r1 == r2:  # Pair
     pair_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
     p_cols = st.columns(6)
     for idx, (p1, p2) in enumerate(pair_combos):
-        btn_label = f"{SUIT_SYMBOLS[p1]}{SUIT_SYMBOLS[p2]} ({r1}{SUIT_SYMBOLS[p1]} {r2}{SUIT_SYMBOLS[p2]})"
+        sm1, sm2 = get_suit_md(p1), get_suit_md(p2)
+        btn_label = f"{sm1}{sm2} ({r1}{sm1} {r2}{sm2})"
         if p_cols[idx].button(btn_label, key=f"quick_pair_{p1}_{p2}", use_container_width=True):
             st.session_state.hero_card1 = f"{r1}{p1}"
             st.session_state.hero_card2 = f"{r2}{p2}"
@@ -442,7 +439,8 @@ if r1 == r2:  # Pair
 elif s1 == s2:  # Suited
     s_cols = st.columns(4)
     for idx, suit in enumerate(SUITS):
-        btn_label = f"{SUIT_SYMBOLS[suit]}{SUIT_SYMBOLS[suit]} ({r1}{SUIT_SYMBOLS[suit]} {r2}{SUIT_SYMBOLS[suit]})"
+        sm = get_suit_md(suit)
+        btn_label = f"{sm}{sm} ({r1}{sm} {r2}{sm})"
         if s_cols[idx].button(btn_label, key=f"quick_suited_{suit}", use_container_width=True):
             st.session_state.hero_card1 = f"{r1}{suit}"
             st.session_state.hero_card2 = f"{r2}{suit}"
@@ -452,7 +450,8 @@ else:  # Offsuit
     off_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
     o_cols = st.columns(6)
     for idx, (p1, p2) in enumerate(off_combos):
-        btn_label = f"{SUIT_SYMBOLS[p1]}{SUIT_SYMBOLS[p2]} ({r1}{SUIT_SYMBOLS[p1]} {r2}{SUIT_SYMBOLS[p2]})"
+        sm1, sm2 = get_suit_md(p1), get_suit_md(p2)
+        btn_label = f"{sm1}{sm2} ({r1}{sm1} {r2}{sm2})"
         if o_cols[idx].button(btn_label, key=f"quick_off_{p1}_{p2}", use_container_width=True):
             st.session_state.hero_card1 = f"{r1}{p1}"
             st.session_state.hero_card2 = f"{r2}{p2}"
@@ -460,7 +459,7 @@ else:  # Offsuit
 
 
 # ==========================================
-# 6. 원클릭 보드 선택 (선택된 카드는 자동 감춤)
+# 6. 원클릭 보드 선택 (개별 색상 마크다운 적용)
 # ==========================================
 st.markdown("---")
 st.subheader("🃏 커뮤니티 보드 카드 선택 (플랍 · 턴 · 리버)")
@@ -492,10 +491,11 @@ st.write("👉 **원클릭 카드 피커 (선택된 카드는 자동 숨김):**"
 
 for s in SUITS:
     suit_row = st.columns([0.8] + [1]*13)
-    suit_row[0].markdown(f"### {SUIT_SYMBOLS[s]}")
+    suit_row[0].markdown(f"### {get_suit_md(s)}")
     for j, r in enumerate(RANKS):
         card_code = f"{r}{s}"
-        btn_label = f"{r.replace('T', '10')}{SUIT_SYMBOLS[s]}"
+        sm = get_suit_md(s)
+        btn_label = f"{r.replace('T', '10')}{sm}"
         
         is_used = card_code in used_cards
         is_full = len(st.session_state.board_cards) >= 5
