@@ -34,7 +34,7 @@ if "board_cards" not in st.session_state:
 # ==========================================
 st.sidebar.title("⚙️ 설정 & 게임 옵션")
 
-# 라이트 모드를 디폴트(index=0)로 설정
+# 라이트 모드를 디폴트(index=0)로 지정
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
 
@@ -130,11 +130,19 @@ def get_hand_colors(r1, r2):
     return txt_color, bg_color
 
 
-# 마크다운 개별 색상 처리를 위한 심볼 헬퍼 (하트/다이아만 빨간색)
+# 마크다운 색상 처리 헬퍼 (하트/다이아 = 숫자+문양 모두 빨간색)
 def get_suit_md(suit_code):
     if suit_code in ["h", "d"]:
         return f":red[{SUIT_SYMBOLS[suit_code]}]"
     return SUIT_SYMBOLS[suit_code]
+
+
+def format_card_md(rank, suit_code):
+    rank_str = rank.replace("T", "10")
+    symbol = SUIT_SYMBOLS[suit_code]
+    if suit_code in ["h", "d"]:
+        return f":red[{rank_str}{symbol}]"
+    return f"{rank_str}{symbol}"
 
 
 dynamic_button_styles = []
@@ -175,7 +183,7 @@ for r1 in RANKS:
             }}
         """)
 
-# 2) 원클릭 카드 피커 버튼 배경 및 테두리 설정
+# 2) 원클릭 카드 피커 버튼 스타일링
 for r in RANKS:
     for s in SUITS:
         card_code = f"{r}{s}"
@@ -197,7 +205,7 @@ for r in RANKS:
             }}
         """)
 
-# 3) 무늬(Suit) 원클릭 변경 버튼 배경 및 테두리 설정 (글자색 지정 제외 -> 마크다운이 직접 제어)
+# 3) 무늬(Suit) 원클릭 변경 버튼 스타일링
 all_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
 for p1, p2 in all_combos:
     for prefix in ["quick_pair", "quick_off"]:
@@ -410,7 +418,7 @@ for i, r1 in enumerate(RANKS):
 
 
 # ==========================================
-# 5. 선택 핸드 및 원클릭 무늬 프리셋 (개별 색상 마크다운 적용)
+# 5. 선택 핸드 및 원클릭 무늬 프리셋 (알파벳/숫자 포함 개별 색상 적용)
 # ==========================================
 st.markdown("---")
 h1, h2 = st.session_state.hero_card1, st.session_state.hero_card2
@@ -430,7 +438,8 @@ if r1 == r2:  # Pair
     p_cols = st.columns(6)
     for idx, (p1, p2) in enumerate(pair_combos):
         sm1, sm2 = get_suit_md(p1), get_suit_md(p2)
-        btn_label = f"{sm1}{sm2} ({r1}{sm1} {r2}{sm2})"
+        c1_md, c2_md = format_card_md(r1, p1), format_card_md(r2, p2)
+        btn_label = f"{sm1}{sm2} ({c1_md} {c2_md})"
         if p_cols[idx].button(btn_label, key=f"quick_pair_{p1}_{p2}", use_container_width=True):
             st.session_state.hero_card1 = f"{r1}{p1}"
             st.session_state.hero_card2 = f"{r2}{p2}"
@@ -440,7 +449,8 @@ elif s1 == s2:  # Suited
     s_cols = st.columns(4)
     for idx, suit in enumerate(SUITS):
         sm = get_suit_md(suit)
-        btn_label = f"{sm}{sm} ({r1}{sm} {r2}{sm})"
+        c1_md, c2_md = format_card_md(r1, suit), format_card_md(r2, suit)
+        btn_label = f"{sm}{sm} ({c1_md} {c2_md})"
         if s_cols[idx].button(btn_label, key=f"quick_suited_{suit}", use_container_width=True):
             st.session_state.hero_card1 = f"{r1}{suit}"
             st.session_state.hero_card2 = f"{r2}{suit}"
@@ -451,7 +461,8 @@ else:  # Offsuit
     o_cols = st.columns(6)
     for idx, (p1, p2) in enumerate(off_combos):
         sm1, sm2 = get_suit_md(p1), get_suit_md(p2)
-        btn_label = f"{sm1}{sm2} ({r1}{sm1} {r2}{sm2})"
+        c1_md, c2_md = format_card_md(r1, p1), format_card_md(r2, p2)
+        btn_label = f"{sm1}{sm2} ({c1_md} {c2_md})"
         if o_cols[idx].button(btn_label, key=f"quick_off_{p1}_{p2}", use_container_width=True):
             st.session_state.hero_card1 = f"{r1}{p1}"
             st.session_state.hero_card2 = f"{r2}{p2}"
@@ -459,7 +470,7 @@ else:  # Offsuit
 
 
 # ==========================================
-# 6. 원클릭 보드 선택 (개별 색상 마크다운 적용)
+# 6. 원클릭 보드 선택 (알파벳/숫자 포함 개별 색상 적용)
 # ==========================================
 st.markdown("---")
 st.subheader("🃏 커뮤니티 보드 카드 선택 (플랍 · 턴 · 리버)")
@@ -494,8 +505,7 @@ for s in SUITS:
     suit_row[0].markdown(f"### {get_suit_md(s)}")
     for j, r in enumerate(RANKS):
         card_code = f"{r}{s}"
-        sm = get_suit_md(s)
-        btn_label = f"{r.replace('T', '10')}{sm}"
+        btn_label = format_card_md(r, s)
         
         is_used = card_code in used_cards
         is_full = len(st.session_state.board_cards) >= 5
