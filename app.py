@@ -83,10 +83,10 @@ with st.sidebar.expander("📖 서비스 사용 설명서", expanded=True):
     - 선택된 카드는 **'❌ 삭제'** 버튼으로 개별 제거가 가능합니다.
 
     **3️⃣ 상대 베팅 크기 선택**
-    - 상대방의 팟 대비 베팅 비율(25%~200%)을 선택하면 **수학적인 승률(콜 필요 승률)**이 자동 산출됩니다.
+    - 상대방의 팟 대비 베팅 비율(25%~200%)을 선택하면 **콜 필요 승률(참고용)**이 자동 산출됩니다.
 
     **4️⃣ 승률 & 가치 진단 확인**
-    - 왼쪽의 **'수학적인 승률'**과 오른쪽의 **'모든 경우 반영 승률'**을 비교하여 Call / Fold / Raise 수학적 판정을 얻습니다.
+    - 왼쪽의 **'내 승률'**이 오른쪽의 **'콜 필요 승률(참고용)'**보다 높은지 비교하여 Call / Fold / Raise 수학적 판정을 얻습니다.
     """)
 
 
@@ -784,7 +784,7 @@ with st.expander("📖 베팅 크기별 필요 승률 & 아웃츠(Outs) 가이�
 
 
 # ==========================================
-# 9. 실시간 승률 분리 표기 (수학적인 승률 vs 모든 경우 반영 승률)
+# 9. 실시간 승률 분리 표기 (왼쪽: 내 승률 / 오른쪽: 콜 필요 승률(참고용))
 # ==========================================
 st.markdown("---")
 st.subheader("🚀 실시간 승률 및 수학적 진단 결과")
@@ -805,29 +805,29 @@ else:
         eq_pct = equity * 100.0
         ev_diff = eq_pct - req_eq
         
-        # 좌/우 승률 분리 카드 UI 생성
-        col_math_left, col_sim_right = st.columns(2)
+        # 순서 교체: 왼쪽(내 승률) | 오른쪽(콜 필요 승률 참고용)
+        col_hero_left, col_math_right = st.columns(2)
         
-        with col_math_left:
-            st.markdown(f"""
-                <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:10px; padding:16px; text-align:center;">
-                    <div style="color:#60a5fa; font-size:1.05rem; font-weight:bold;">📐 수학적인 승률 (콜 필요 승률)</div>
-                    <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{req_eq:.1f}%</div>
-                    <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
-                        팟 오즈 비율: <b>{pot_ratio_str}</b><br>
-                        필요 아웃츠 (Flop/Turn): <b>약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개</b>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col_sim_right:
+        with col_hero_left:
             st.markdown(f"""
                 <div style="background-color:{card_bg}; border:2px solid #22c55e; border-radius:10px; padding:16px; text-align:center;">
-                    <div style="color:#4ade80; font-size:1.05rem; font-weight:bold;">🎲 모든 경우 반영 승률 (실제 핸드 승률)</div>
+                    <div style="color:#4ade80; font-size:1.05rem; font-weight:bold;">🎲 내 승률 (모든 경우 반영)</div>
                     <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{eq_pct:.1f}%</div>
                     <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
                         승리: <b>{win_rate*100:.1f}%</b> | 비김: <b>{tie_rate*100:.1f}%</b> | 패배: <b>{loss_rate*100:.1f}%</b><br>
                         기대값 차이 (EV Diff): <b>{ev_diff:+.1f}%p</b>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col_math_right:
+            st.markdown(f"""
+                <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:10px; padding:16px; text-align:center;">
+                    <div style="color:#60a5fa; font-size:1.05rem; font-weight:bold;">📐 콜 필요 승률 (참고용)</div>
+                    <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{req_eq:.1f}%</div>
+                    <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
+                        팟 오즈 비율: <b>{pot_ratio_str}</b><br>
+                        필요 아웃츠 (Flop/Turn): <b>약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개</b>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
