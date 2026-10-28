@@ -24,7 +24,7 @@ RANK_NAME = {14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: '10', 9: '9', 8: '8', 7: '7
 
 EVALUATOR = Evaluator()
 
-# 세션 상태 초기화
+# 세션 상태 초기화 (디폴트 팟 베팅: 25.0%)
 if "hero_card1" not in st.session_state:
     st.session_state.hero_card1 = "As"
 if "hero_card2" not in st.session_state:
@@ -32,7 +32,7 @@ if "hero_card2" not in st.session_state:
 if "board_cards" not in st.session_state:
     st.session_state.board_cards = []
 if "bet_ratio_pct" not in st.session_state:
-    st.session_state.bet_ratio_pct = 50.0  # 기본 50% 팟 베팅
+    st.session_state.bet_ratio_pct = 25.0  # 디폴트 25% 팟 베팅 설정
 
 
 # ==========================================
@@ -59,7 +59,7 @@ TIER_C = {
 
 
 # ==========================================
-# 2. 사이드바: 옵션 슬라이더 및 테마 선택 순서
+# 2. 사이드바: 옵션 슬라이더, 테마 선택 및 사용 설명서
 # ==========================================
 opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
 sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
@@ -70,6 +70,24 @@ st.sidebar.title("⚙️ 설정 & 게임 옵션")
 
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
+
+# 테마 선택 바로 아래 배치된 서비스 사용 설명서
+with st.sidebar.expander("📖 서비스 사용 설명서", expanded=True):
+    st.markdown("""
+    **1️⃣ 내 핸드 선택**
+    - 13x13 매트릭스 표에서 내 핸드(예: AKs, 88)를 클릭합니다.
+    - 아래 **'무늬 원클릭 변경'**으로 무늬(♠, ♥, ♦, ♣) 조합을 빠르게 세부 변경할 수 있습니다.
+
+    **2️⃣ 커뮤니티 보드 선택**
+    - 하단 카드 피커에서 **플랍(3장)**, **턴(1장)**, **리버(1장)** 카드를 선택합니다.
+    - 선택된 카드는 **'❌ 삭제'** 버튼으로 개별 제거가 가능합니다.
+
+    **3️⃣ 상대 베팅 크기 선택**
+    - 상대방의 팟 대비 베팅 비율(25%~200%)을 선택하면 **수학적인 승률(콜 필요 승률)**이 자동 산출됩니다.
+
+    **4️⃣ 승률 & 가치 진단 확인**
+    - 왼쪽의 **'수학적인 승률'**과 오른쪽의 **'모든 경우 반영 승률'**을 비교하여 Call / Fold / Raise 수학적 판정을 얻습니다.
+    """)
 
 
 # ==========================================
@@ -363,7 +381,7 @@ for idx, val in enumerate(presets_vals):
         }}
     """)
 
-# ★ 5) 보드 삭제 및 전체 초기화 버튼 전용 테마별 고대비 스타일링 ★
+# 5) 보드 삭제 및 전체 초기화 버튼 전용 테마별 고대비 스타일링
 del_btn_bg = "#450a0a" if is_dark else "#fef2f2"
 del_btn_txt = "#f87171" if is_dark else "#991b1b"
 del_btn_border = "#991b1b" if is_dark else "#fca5a5"
@@ -766,10 +784,10 @@ with st.expander("📖 베팅 크기별 필요 승률 & 아웃츠(Outs) 가이�
 
 
 # ==========================================
-# 9. 실시간 승률 및 수학적 진단 제안 (자동 연산 반영)
+# 9. 실시간 승률 분리 표기 (수학적인 승률 vs 모든 경우 반영 승률)
 # ==========================================
 st.markdown("---")
-st.subheader("🚀 실시간 승률 계산 및 수학적 진단 결과")
+st.subheader("🚀 실시간 승률 및 수학적 진단 결과")
 
 invalid_board_count = len(board_cards) not in (0, 3, 4, 5)
 
@@ -787,6 +805,35 @@ else:
         eq_pct = equity * 100.0
         ev_diff = eq_pct - req_eq
         
+        # 좌/우 승률 분리 카드 UI 생성
+        col_math_left, col_sim_right = st.columns(2)
+        
+        with col_math_left:
+            st.markdown(f"""
+                <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:10px; padding:16px; text-align:center;">
+                    <div style="color:#60a5fa; font-size:1.05rem; font-weight:bold;">📐 수학적인 승률 (콜 필요 승률)</div>
+                    <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{req_eq:.1f}%</div>
+                    <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
+                        팟 오즈 비율: <b>{pot_ratio_str}</b><br>
+                        필요 아웃츠 (Flop/Turn): <b>약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개</b>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col_sim_right:
+            st.markdown(f"""
+                <div style="background-color:{card_bg}; border:2px solid #22c55e; border-radius:10px; padding:16px; text-align:center;">
+                    <div style="color:#4ade80; font-size:1.05rem; font-weight:bold;">🎲 모든 경우 반영 승률 (실제 핸드 승률)</div>
+                    <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{eq_pct:.1f}%</div>
+                    <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
+                        승리: <b>{win_rate*100:.1f}%</b> | 비김: <b>{tie_rate*100:.1f}%</b> | 패배: <b>{loss_rate*100:.1f}%</b><br>
+                        기대값 차이 (EV Diff): <b>{ev_diff:+.1f}%p</b>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+
         if eq_pct >= req_eq + 15.0:
             rec_action = "레이즈 / 올인 (Raise or All-in)"
             action_class = "action-allin"
@@ -807,12 +854,6 @@ else:
             action_class = "action-fold"
             math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
             advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 이 상황에서 콜을 반복하면 지속적으로 칩이 감소하므로 **폴드(Fold)**가 수학적 정석입니다."
-
-        res1, res2, res3, res4 = st.columns(4)
-        res1.metric("내 최종 승률 (Equity)", f"{eq_pct:.1f}%")
-        res2.metric("콜 필요 승률 (Equity to Call)", f"{req_eq:.1f}%")
-        res3.metric("기대값 차이 (EV Diff)", f"{ev_diff:+.1f}%p", delta=f"{ev_diff:+.1f}%p")
-        res4.metric("추정 필요 아웃츠", f"약 {outs_req_flop:.0f}개")
 
         st.markdown(f"""
             <div class="action-card">
