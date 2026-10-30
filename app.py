@@ -14,6 +14,31 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# ----------------------------------------------------
+# [추가] Streamlit 상단 바 및 하단 푸터 숨김 CSS
+# ----------------------------------------------------
+st.markdown("""
+    <style>
+    /* 상단 헤더 (메뉴 및 Deploy 버튼 포함) 숨김 */
+    header[data-testid="stHeader"] {
+        visibility: hidden !important;
+        height: 0rem !important;
+    }
+    /* 햄버거 메뉴 숨김 */
+    #MainMenu {
+        visibility: hidden !important;
+    }
+    /* 하단 "Made with Streamlit" 푸터 숨김 */
+    footer {
+        visibility: hidden !important;
+    }
+    /* Deploy 버튼 숨김 */
+    .stDeployButton {
+        display: none !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"]
 SUITS = ["s", "h", "d", "c"]
 SUIT_SYMBOLS = {"s": "♠", "h": "♥", "d": "♦", "c": "♣"}
