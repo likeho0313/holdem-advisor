@@ -126,7 +126,6 @@ st.sidebar.title("⚙️ 게임 설정 & 화면 모드")
 view_mode = st.sidebar.radio("📱 화면 모드 선택", ["📱 모바일 모드", "💻 PC 모드"], index=0)
 is_mobile = (view_mode == "📱 모바일 모드")
 
-# 모바일 버전 슬라이더 최대 3인 제한
 max_opponents = 3 if is_mobile else 9
 opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=max_opponents, value=min(3, max_opponents))
 
@@ -365,7 +364,6 @@ st.markdown(f"""
         min-height: 0px !important;
     }}
     
-    /* 사이드바 토글 버튼 좌측 하단 고정 */
     [data-testid="stSidebarCollapsedControl"] {{
         display: block !important;
         position: fixed !important;
@@ -387,7 +385,6 @@ st.markdown(f"""
         padding-right: {"0.2rem" if is_mobile else "1rem"} !important;
     }}
 
-    /* 요소 간격(Gap) 극단적 단축 */
     div[data-testid="stVerticalBlock"] > div {{
         gap: {"0.15rem" if is_mobile else "0.4rem"} !important;
     }}
@@ -823,7 +820,7 @@ with tab_game:
 
         st.session_state.mg_pot_details_rows = pot_rows
         st.session_state.mg_payouts = payouts
-        st.session_state.mg_result_msg = "🏆 **쇼다운 완료! 결과를 확인하세요.**"
+        st.session_state.mg_result_msg = "🏆 쇼다운 완료"
         st.session_state.mg_stage = "IDLE"
 
     def advance_poker_street():
@@ -889,7 +886,7 @@ with tab_game:
                     payouts[0] = st.session_state.mg_pot
                     st.session_state.mg_payouts = payouts
                     st.session_state.mg_user_chips += st.session_state.mg_pot
-                    st.session_state.mg_result_msg = f"🎉 상대 기권으로 **Hero**가 팟 **+{st.session_state.mg_pot} 칩**을 획득했습니다!"
+                    st.session_state.mg_result_msg = f"🎉 상대 기권으로 Hero 승리"
                     st.session_state.mg_pot_details_rows = []
                 else:
                     win_ai = next(
@@ -900,7 +897,7 @@ with tab_game:
                     st.session_state.mg_payouts = payouts
                     if win_ai < len(st.session_state.mg_opp_chips):
                         st.session_state.mg_opp_chips[win_ai] += st.session_state.mg_pot
-                    st.session_state.mg_result_msg = f"😭 기권으로 **AI {win_ai+1}**가 팟 **+{st.session_state.mg_pot} 칩**을 획득했습니다!"
+                    st.session_state.mg_result_msg = f"😭 AI {win_ai+1} 승리"
                     st.session_state.mg_pot_details_rows = []
                 st.session_state.mg_stage = "IDLE"
                 break
@@ -1093,7 +1090,6 @@ with tab_game:
     if need_reset:
         reset_entire_tournament()
 
-    # 메인 상단 메트릭 요약 바
     active_indices = get_active_player_indices()
     active_players_count = len(active_indices)
 
@@ -1103,23 +1099,36 @@ with tab_game:
     m3.metric("🏆 생존", f"{active_players_count}/{total_players}")
     m4.metric("📌 단계", st.session_state.mg_stage)
 
-    # 핸드 결과 메시지
-    if st.session_state.mg_result_msg:
-        if "Hero" in st.session_state.mg_result_msg or "획득" in st.session_state.mg_result_msg:
-            st.success(st.session_state.mg_result_msg)
-        else:
-            st.info(st.session_state.mg_result_msg)
+    # -----------------------------------------------------------------
+    # [요청사항 반영] 모바일 모드 쇼다운 결과 간략화
+    # 승자 : [승자들], Hero 순이익 : [손익]
+    # -----------------------------------------------------------------
+    payouts = st.session_state.get("mg_payouts", [])
+    contribs = st.session_state.get("mg_all_contribs", [])
 
-    # 사이드 팟 표
-    if st.session_state.get("mg_pot_details_rows"):
-        table_md = "| 팟 구분 | 팟 금액 | 자격자 | 🏆 승자 | 🃏 족보 |\n| :--- | :--- | :--- | :--- | :--- |\n"
-        for row in st.session_state.mg_pot_details_rows:
-            table_md += f"| **{row['label']}** | **{row['pot_amt']}** | {row['eligible']} | **{row['winners']}** | {row['hands']} |\n"
-        st.markdown(table_md)
+    if is_mobile:
+        if payouts and len(contribs) == total_players:
+            winners_list = [get_player_name(i) for i, amt in enumerate(payouts) if amt > 0]
+            winners_str = ", ".join(winners_list) if winners_list else "-"
+            hero_net = payouts[0] - contribs[0]
+            sign = "+" if hero_net >= 0 else ""
+            st.info(f"🏆 **승자 : {winners_str}**, **Hero 순이익 : {sign}{hero_net} 칩**")
+    else:
+        if st.session_state.mg_result_msg:
+            if "Hero" in st.session_state.mg_result_msg or "획득" in st.session_state.mg_result_msg:
+                st.success(st.session_state.mg_result_msg)
+            else:
+                st.info(st.session_state.mg_result_msg)
+
+        if st.session_state.get("mg_pot_details_rows"):
+            table_md = "| 팟 구분 | 팟 금액 | 자격자 | 🏆 승자 | 🃏 족보 |\n| :--- | :--- | :--- | :--- | :--- |\n"
+            for row in st.session_state.mg_pot_details_rows:
+                table_md += f"| **{row['label']}** | **{row['pot_amt']}** | {row['eligible']} | **{row['winners']}** | {row['hands']} |\n"
+            st.markdown(table_md)
 
     sb_pos, bb_pos, _ = get_positions(st.session_state.mg_dealer_pos, active_indices)
 
-    # 1) 상대 AI 영역 (최대 3인 제한 및 아이콘 옆 히스토리 칩 2개까지 나란히 표시)
+    # 1) 상대 AI 영역
     st.write("🤖 **상대 AI 현황:**")
     
     cols_per_row = 3 if is_mobile else min(opponents_count, 9)
@@ -1143,7 +1152,6 @@ with tab_game:
                 is_folded = is_player_folded(p_idx)
                 
                 ai_logs = st.session_state.mg_player_histories.get(f"AI {idx+1}", [])
-                # 히스토리 칩 최대 2개 나란히 연결
                 latest_badges = " ".join(ai_logs[-2:]) if ai_logs else ""
                 
                 allin_tag = " <span style='color:#ef4444; font-weight:bold;'>(ALL IN)</span>" if (chip_val == 0 and not is_elim and not is_folded) else ""
@@ -1169,7 +1177,7 @@ with tab_game:
                     else:
                         st.markdown("<span style='font-size:0.9rem;'>🂠 🂠</span>", unsafe_allow_html=True)
 
-    # 2) 내 핸드 + 히스토리 칩(최대 2개) + 커뮤니티 보드 한 줄 통합 구성
+    # 2) 내 핸드 + 커뮤니티 보드 한 줄 통합
     hero_tag = ""
     if st.session_state.mg_dealer_pos == 0: hero_tag = " [BTN]"
     elif sb_pos == 0: hero_tag = " [SB]"
@@ -1185,11 +1193,9 @@ with tab_game:
     hero_allin_tag = " <span style='color:#ef4444; font-weight:bold;'>(ALL IN)</span>" if (st.session_state.mg_user_chips == 0 and not st.session_state.mg_user_eliminated and not st.session_state.mg_user_folded) else ""
 
     hero_logs = st.session_state.mg_player_histories.get("Hero", [])
-    # 내 히스토리 칩 2개
     latest_hero_badges = " ".join(hero_logs[-2:]) if hero_logs else ""
     board_h = "".join([format_card_html(c) for c in st.session_state.mg_board_cards]) if st.session_state.mg_board_cards else "<span style='color:gray; font-size:0.75rem;'>[프리플랍]</span>"
 
-    # [요청사항 반영] 내 핸드와 커뮤니티 보드를 한 줄 플렉스(Flex) 박스로 통합
     st.markdown(f"""
         <div class="hero-board-box">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; gap:4px;">
@@ -1204,7 +1210,7 @@ with tab_game:
         </div>
     """, unsafe_allow_html=True)
 
-    # 3) 게임 대기 및 진행 액션 (간격 최소화 및 쓸데없는 라인 제거)
+    # 3) 대기 및 액션 버튼 영역
     if st.session_state.mg_stage == "IDLE":
         if active_players_count == 1:
             if not st.session_state.mg_user_eliminated:
@@ -1268,12 +1274,6 @@ with tab_game:
                 min_raise_amt = call_needed + bb_setting
                 max_raise_amt = st.session_state.mg_user_chips
                 
-                # -----------------------------------------------------------------
-                # [전역 개선] 레이즈 구조 변경: 
-                # 1. 최상단: 레이즈 버튼
-                # 2. 중간: 숫자 입력 박스
-                # 3. 최하단: 최소~최대 표기만
-                # -----------------------------------------------------------------
                 act_col1, act_col2, act_col3 = st.columns(3 if is_mobile else [1.2, 2, 1])
 
                 # 1) Check / Call
@@ -1301,7 +1301,7 @@ with tab_game:
                         run_poker_turn_engine()
                         st.rerun()
 
-                # 2) Raise (최상단 레이즈 버튼 -> 중간 숫자박스 -> 최하단 최소~최대)
+                # 2) Raise (최상단: 레이즈 버튼 -> 중간: 숫자 입력 박스 -> 최하단: 최소~최대 표기)
                 with act_col2:
                     if min_raise_amt <= max_raise_amt:
                         raise_key = f"raise_input_val_{is_mobile}"
@@ -1311,7 +1311,6 @@ with tab_game:
                         is_hero_raise_allin = (st.session_state.mg_user_chips - custom_raise_val == 0)
                         btn_raise_label = f"🔺 레이즈 ({custom_raise_val} 칩)" + ("(ALL IN)" if is_hero_raise_allin else "")
                         
-                        # [1. 최상단: 레이즈 버튼]
                         if st.button(btn_raise_label, use_container_width=True):
                             st.session_state.mg_user_chips -= custom_raise_val
                             st.session_state.mg_pot += custom_raise_val
@@ -1325,7 +1324,6 @@ with tab_game:
                             run_poker_turn_engine()
                             st.rerun()
 
-                        # [2. 중간: 숫자 박스]
                         st.number_input(
                             "레이즈 금액",
                             value=int(custom_raise_val),
@@ -1334,7 +1332,6 @@ with tab_game:
                             label_visibility="collapsed"
                         )
 
-                        # [3. 최하단: 최소~최대 표기만]
                         st.caption(f"최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩")
 
                     else:
@@ -1360,7 +1357,7 @@ with tab_game:
                     run_poker_turn_engine()
                     st.rerun()
 
-        # 4) 내 실시간 승률 & 팟 오즈 (액션 아래에 조밀하게 노출)
+        # 4) 내 실시간 승률 & 팟 오즈
         live_active_opp = sum(
             1 for idx in range(opponents_count) 
             if not is_player_eliminated(idx + 1) and not is_player_folded(idx + 1)
