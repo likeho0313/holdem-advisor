@@ -129,7 +129,6 @@ is_mobile = (view_mode == "📱 모바일 모드")
 max_opponents = 3 if is_mobile else 9
 opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=max_opponents, value=min(3, max_opponents))
 
-# [수정] 시작 칩 초기값을 400으로 설정
 start_chips_setting = st.sidebar.slider(
     "시작 칩 (Start Chips)",
     min_value=100,
@@ -385,7 +384,6 @@ for r in RANKS:
             div[class*="st-key-{key_id}"] button * {{ font-weight: bold !important; font-size: {btn_font_size} !important; }}
         """)
 
-# "다음 핸드 진행" 버튼 전용 초록색 CSS 주입
 dynamic_button_styles.append("""
     div[class*="st-key-btn_next_hand"] button {
         background-color: #22c55e !important;
@@ -1304,7 +1302,7 @@ with tab_game:
                     else:
                         st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
 
-    # 2) 내 핸드 + 커뮤니티 보드
+    # 2) 내 핸드 + 커뮤니티 보드 (PC 모드 보드 복구 반영)
     hero_tag = ""
     if st.session_state.mg_dealer_pos == 0: hero_tag = " [BTN]"
     elif sb_pos == 0: hero_tag = " [SB]"
@@ -1321,7 +1319,7 @@ with tab_game:
 
     hero_logs = st.session_state.mg_player_histories.get("Hero", [])
     latest_hero_badges = " ".join(hero_logs[-2:]) if hero_logs else ""
-    board_h = "".join([format_card_html(c) for c in st.session_state.mg_board_cards]) if st.session_state.mg_board_cards else "<span style='color:gray; font-size:0.75rem;'>[프리플랍]</span>"
+    board_h = "".join([format_card_html(c) for c in st.session_state.mg_board_cards]) if st.session_state.mg_board_cards else ("<span style='color:gray; font-size:0.75rem;'>[프리플랍]</span>" if is_mobile else "<span style='color:gray;'>[ 프리플랍 ]</span>")
 
     if is_mobile:
         st.markdown(f"""
@@ -1337,8 +1335,8 @@ with tab_game:
                 </div>
             </div>
         """, unsafe_allow_html=True)
-    else: # PC 모드
-        hero_col1, hero_col2 = st.columns([2, 1])
+    else: # PC 모드 (커뮤니티 보드 컬럼 추가)
+        hero_col1, hero_col2, hero_col3 = st.columns([2, 2, 1])
         with hero_col1:
             st.markdown(f"### 👤 내 핸드{hero_tag}: {hero_h}{hero_rank_str}", unsafe_allow_html=True)
             st.markdown(f"""
@@ -1350,6 +1348,9 @@ with tab_game:
             """, unsafe_allow_html=True)
 
         with hero_col2:
+            st.markdown(f"### 🃏 커뮤니티 보드: {board_h}", unsafe_allow_html=True)
+
+        with hero_col3:
             if hero_logs:
                 st.markdown(f"<div class='player-action-box'><b>내 행동 칩:</b><br>{latest_hero_badges}</div>", unsafe_allow_html=True)
             else:
@@ -1456,7 +1457,7 @@ with tab_game:
                         run_poker_turn_engine()
                         st.rerun()
 
-                # 2) Raise
+                # 2) Raise (레이즈 버튼 -> 수량 입력 -> 설명순 반영)
                 with act_col2:
                     if min_raise_amt <= max_raise_amt:
                         if is_mobile:
@@ -1547,6 +1548,7 @@ with tab_game:
                             st.session_state.mg_active_turn = get_next_turn(0)
                             run_poker_turn_engine()
                             st.rerun()
+
                 # 3) Fold
                 if act_col3.button("🏳️ 폴드", use_container_width=True):
                     st.session_state.mg_user_folded = True
@@ -1578,9 +1580,7 @@ with tab_game:
             live_req_eq = 0.0
             req_eq_display = "0.0% (체크 가능)"
 
-        # -----------------------------------------------------------------
-        # [수정] 확률 바로 위 '실시간 상황 해설 UI' (한 줄 표기 형태)
-        # -----------------------------------------------------------------
+        # 실시간 상황 해설 UI
         if is_mobile:
             if call_needed > 0:
                 if live_eq >= live_req_eq:
