@@ -111,7 +111,13 @@ TIER_C = {
 st.sidebar.title("⚙️ 게임 설정 & UI 테마")
 
 opponents_count = st.sidebar.slider("상대 플레이어 수 (1~9명)", min_value=1, max_value=9, value=3)
-start_chips_setting = st.sidebar.select_slider("시작 칩 (Start Chips)", options=[1000, 2000, 3000, 5000, 10000], value=2000)
+start_chips_setting = st.sidebar.slider(
+    "시작 칩 (Start Chips)",
+    min_value=100,
+    max_value=5000,
+    value=400,
+    step=100
+)
 sim_iterations = st.sidebar.select_slider("승률 정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
 
 st.sidebar.markdown("---")
