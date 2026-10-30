@@ -1467,6 +1467,7 @@ with tab_game:
                             is_hero_raise_allin = (st.session_state.mg_user_chips - custom_raise_val == 0)
                             btn_raise_label = f"🔺 레이즈 ({custom_raise_val} 칩)" + ("(ALL IN)" if is_hero_raise_allin else "")
                             
+                            # 1. 최상단: 레이즈 버튼
                             if st.button(btn_raise_label, use_container_width=True):
                                 st.session_state.mg_user_chips -= custom_raise_val
                                 st.session_state.mg_pot += custom_raise_val
@@ -1480,30 +1481,32 @@ with tab_game:
                                 run_poker_turn_engine()
                                 st.rerun()
 
+                            # 2. 그 아래: 레이즈 칩 수 입력
                             st.number_input(
                                 "레이즈 금액",
+                                min_value=int(min_raise_amt),
+                                max_value=int(max_raise_amt),
                                 value=int(custom_raise_val),
                                 step=int(bb_setting),
                                 key=raise_key,
                                 label_visibility="collapsed"
                             )
 
+                            # 3. 최하단: 레이즈 가능 칩 범위 설명
                             st.caption(f"최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩")
+
                         else: # PC 모드
-                            custom_raise_val = st.number_input(
-                                f"🔺 이번 턴 지출 금액 (최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩):",
-                                min_value=int(min_raise_amt),
-                                max_value=int(max_raise_amt),
-                                value=int(min_raise_amt),
-                                step=int(bb_setting),
-                                key="raise_num_input_pc"
-                            )
+                            raise_key = "raise_num_input_pc"
+                            raw_input_val = st.session_state.get(raise_key, min_raise_amt)
+                            custom_raise_val = max(min_raise_amt, min(raw_input_val, max_raise_amt))
+                            
                             total_raise_bet = st.session_state.mg_user_bet + custom_raise_val
                             is_hero_raise_allin = (st.session_state.mg_user_chips - custom_raise_val == 0)
                             btn_raise_label = f"🔺 레이즈 실행 (이번 턴 {custom_raise_val} 칩 지출 | 라운드 총액: {total_raise_bet} 칩)"
                             if is_hero_raise_allin:
                                 btn_raise_label += " (ALL IN)"
                             
+                            # 1. 최상단: 레이즈 버튼
                             if st.button(btn_raise_label, use_container_width=True):
                                 st.session_state.mg_user_chips -= custom_raise_val
                                 st.session_state.mg_pot += custom_raise_val
@@ -1516,6 +1519,20 @@ with tab_game:
                                 st.session_state.mg_active_turn = get_next_turn(0)
                                 run_poker_turn_engine()
                                 st.rerun()
+
+                            # 2. 그 아래: 레이즈 칩 수 입력
+                            st.number_input(
+                                f"🔺 이번 턴 지출 금액",
+                                min_value=int(min_raise_amt),
+                                max_value=int(max_raise_amt),
+                                value=int(custom_raise_val),
+                                step=int(bb_setting),
+                                key=raise_key,
+                                label_visibility="collapsed"
+                            )
+
+                            # 3. 최하단: 레이즈 가능 칩 범위 설명
+                            st.caption(f"최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩")
 
                     else:
                         allin_amt = st.session_state.mg_user_chips
@@ -1530,7 +1547,6 @@ with tab_game:
                             st.session_state.mg_active_turn = get_next_turn(0)
                             run_poker_turn_engine()
                             st.rerun()
-
                 # 3) Fold
                 if act_col3.button("🏳️ 폴드", use_container_width=True):
                     st.session_state.mg_user_folded = True
