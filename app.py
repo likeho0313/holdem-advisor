@@ -126,7 +126,9 @@ st.sidebar.title("⚙️ 게임 설정 & 화면 모드")
 view_mode = st.sidebar.radio("📱 화면 모드 선택", ["📱 모바일 모드", "💻 PC 모드"], index=0)
 is_mobile = (view_mode == "📱 모바일 모드")
 
-opponents_count = st.sidebar.slider("상대 플레이어 수 (1~9명)", min_value=1, max_value=9, value=3)
+# 모바일 버전 슬라이더 최대 3인 제한
+max_opponents = 3 if is_mobile else 9
+opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=max_opponents, value=min(3, max_opponents))
 
 start_chips_setting = st.sidebar.slider(
     "시작 칩 (Start Chips)",
@@ -253,22 +255,22 @@ def eval_5cards_korean(combo):
     
     if is_flush and is_mountain: return (13, ranks), "로얄 스플"
     elif is_flush and is_back_straight: return (12, ranks), "백 스플"
-    elif is_flush and is_reg_straight: return (11, ranks[0]), f"스티플 ({RANK_NAME[ranks[0]]})"
-    elif freq[0][0] == 4: return (10, freq[0][1], freq[1][1]), f"포카드 ({RANK_NAME[freq[0][1]]})"
-    elif freq[0][0] == 3 and freq[1][0] == 2: return (9, freq[0][1], freq[1][1]), f"풀하우스 ({RANK_NAME[freq[0][1]]})"
-    elif is_flush: return (8, ranks), f"플러쉬 ({RANK_NAME[ranks[0]]})"
+    elif is_flush and is_reg_straight: return (11, ranks[0]), f"스티플({RANK_NAME[ranks[0]]})"
+    elif freq[0][0] == 4: return (10, freq[0][1], freq[1][1]), f"포카드({RANK_NAME[freq[0][1]]})"
+    elif freq[0][0] == 3 and freq[1][0] == 2: return (9, freq[0][1], freq[1][1]), f"풀하우스({RANK_NAME[freq[0][1]]})"
+    elif is_flush: return (8, ranks), f"플러쉬({RANK_NAME[ranks[0]]})"
     elif is_mountain: return (7, 14), "마운틴"
     elif is_back_straight: return (6, 5), "백스트레이트"
-    elif is_reg_straight: return (5, ranks[0]), f"스트레이트 ({RANK_NAME[ranks[0]]})"
-    elif freq[0][0] == 3: return (4, freq[0][1], [f[1] for f in freq[1:]]), f"트리플 ({RANK_NAME[freq[0][1]]})"
-    elif freq[0][0] == 2 and freq[1][0] == 2: return (3, freq[0][1], freq[1][1], freq[2][1]), f"투페어 ({RANK_NAME[freq[0][1]]}&{RANK_NAME[freq[1][1]]})"
-    elif freq[0][0] == 2: return (2, freq[0][1], [f[1] for f in freq[1:]]), f"원페어 ({RANK_NAME[freq[0][1]]})"
-    else: return (1, ranks), f"노페어 ({RANK_NAME[ranks[0]]})"
+    elif is_reg_straight: return (5, ranks[0]), f"스트레이트({RANK_NAME[ranks[0]]})"
+    elif freq[0][0] == 3: return (4, freq[0][1], [f[1] for f in freq[1:]]), f"트리플({RANK_NAME[freq[0][1]]})"
+    elif freq[0][0] == 2 and freq[1][0] == 2: return (3, freq[0][1], freq[1][1], freq[2][1]), f"투페어({RANK_NAME[freq[0][1]]}&{RANK_NAME[freq[1][1]]})"
+    elif freq[0][0] == 2: return (2, freq[0][1], [f[1] for f in freq[1:]]), f"원페어({RANK_NAME[freq[0][1]]})"
+    else: return (1, ranks), f"노페어({RANK_NAME[ranks[0]]})"
 
 
 def get_best_korean_hand(hero_cards, board_cards):
     all_cards = hero_cards + board_cards
-    if len(all_cards) < 5: return "카드 부족"
+    if len(all_cards) < 5: return "카드부족"
     best_score = None
     best_name = ""
     for combo in itertools.combinations(all_cards, 5):
@@ -313,8 +315,8 @@ def calculate_pot_odds_math(bet_pct):
     return equity_to_call, f"{ratio_first} : 1", outs_flop, outs_turn
 
 
-# 동적 CSS 주입 (모바일 극소 여백 적용)
-btn_height = "26px" if is_mobile else "36px"
+# 동적 CSS 주입
+btn_height = "26px" if is_mobile else "34px"
 btn_font_size = "0.68rem" if is_mobile else "0.82rem"
 
 dynamic_button_styles = []
@@ -356,23 +358,40 @@ for r in RANKS:
 
 st.markdown(f"""
     <style>
-    /* 1. 상단 툴바/헤더 완전 숨김 및 여백 컴팩트 조정 */
+    /* 1. 상단 툴바 가리고 사이드바 고정 토글 버튼만 화면 좌측 하단에 상시 배치 */
     header[data-testid="stHeader"] {{
-        display: none !important;
+        background: transparent !important;
+        height: 0px !important;
+        min-height: 0px !important;
     }}
+    
+    /* 사이드바 토글 버튼 좌측 하단 고정 */
+    [data-testid="stSidebarCollapsedControl"] {{
+        display: block !important;
+        position: fixed !important;
+        bottom: 15px !important;
+        left: 15px !important;
+        top: auto !important;
+        z-index: 999999 !important;
+        background-color: #1e293b !important;
+        border: 1px solid #475569 !important;
+        border-radius: 50% !important;
+        padding: 4px !important;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.4) !important;
+    }}
+
     .main .block-container {{
-        padding-top: 0.3rem !important;
-        padding-bottom: 0.3rem !important;
-        padding-left: {"0.3rem" if is_mobile else "1rem"} !important;
-        padding-right: {"0.3rem" if is_mobile else "1rem"} !important;
+        padding-top: 0.2rem !important;
+        padding-bottom: 0.2rem !important;
+        padding-left: {"0.2rem" if is_mobile else "1rem"} !important;
+        padding-right: {"0.2rem" if is_mobile else "1rem"} !important;
     }}
 
-    /* 요소 간격(Gap) 최소화 */
+    /* 요소 간격(Gap) 극단적 단축 */
     div[data-testid="stVerticalBlock"] > div {{
-        gap: {"0.25rem" if is_mobile else "0.5rem"} !important;
+        gap: {"0.15rem" if is_mobile else "0.4rem"} !important;
     }}
 
-    /* 2. 하단 워터마크 및 배지 숨김 */
     footer, #MainMenu, div[data-testid="stDecoration"], div[data-testid="stStatusWidget"],
     div[class*="viewerBadge"], a[href*="streamlit.io"] {{
         display: none !important;
@@ -381,18 +400,18 @@ st.markdown(f"""
     .stApp {{ background-color: {app_bg} !important; color: {text_main} !important; }}
     div[data-testid="stHorizontal"] > div {{ padding: 0px 1px !important; }}
     .stButton button {{
-        width: 100% !important; padding: 2px 0px !important; font-size: {btn_font_size} !important; min-height: {btn_height} !important; border-radius: 4px !important;
+        width: 100% !important; padding: 1px 0px !important; font-size: {btn_font_size} !important; min-height: {btn_height} !important; border-radius: 4px !important;
     }}
     {" ".join(dynamic_button_styles)}
     
-    .tier-badge {{ display: inline-block; padding: 1px 4px; border-radius: 3px; font-weight: bold; font-size: 0.72rem; margin: 0 1px; }}
+    .tier-badge {{ display: inline-block; padding: 1px 3px; border-radius: 3px; font-weight: bold; font-size: 0.7rem; margin: 0 1px; }}
     .tier-badge-s {{ background-color: {bg_s} !important; color: {badge_txt} !important; }}
     .tier-badge-a {{ background-color: {bg_a} !important; color: {badge_txt} !important; }}
     .tier-badge-b {{ background-color: {bg_b} !important; color: {badge_txt} !important; }}
     .tier-badge-c {{ background-color: {bg_c} !important; color: {badge_txt} !important; }}
     .tier-badge-d {{ background-color: {bg_d} !important; color: {badge_txt} !important; border: 1px solid {border_col} !important; }}
 
-    .card-badge {{ display: inline-block; padding: 2px 5px; font-size: {"0.85rem" if is_mobile else "1.05rem"}; font-weight: bold; border-radius: 4px; margin: 1px; }}
+    .card-badge {{ display: inline-block; padding: 1px 4px; font-size: {"0.8rem" if is_mobile else "1.0rem"}; font-weight: bold; border-radius: 4px; margin: 0px 1px; }}
     .suit-s, .suit-c {{ background-color: #1e293b; color: #ffffff; border: 1px solid #475569; }}
     .suit-h, .suit-d {{ background-color: #450a0a; color: #f87171; border: 1px solid #991b1b; }}
     
@@ -400,12 +419,12 @@ st.markdown(f"""
         display: inline-flex;
         align-items: center;
         gap: 1px;
-        padding: 1px 4px;
-        border-radius: 8px;
+        padding: 1px 3px;
+        border-radius: 6px;
         font-weight: bold;
-        font-size: 0.68rem;
+        font-size: 0.65rem;
         box-shadow: 0 1px 2px rgba(0,0,0,0.15);
-        margin: 1px;
+        margin: 0px 1px;
         white-space: nowrap;
     }}
     .chip-sb {{ background-color: #fef08a; color: #854d0e; border: 1px solid #eab308; }}
@@ -418,10 +437,18 @@ st.markdown(f"""
     .opp-card-box {{
         background-color: {card_bg};
         border: 1px solid {border_col};
-        border-radius: 6px;
+        border-radius: 5px;
+        padding: 3px 5px;
+        font-size: 0.7rem;
+        line-height: 1.2;
+    }}
+
+    .hero-board-box {{
+        background-color: {card_bg};
+        border: 1px solid {border_col};
+        border-radius: 5px;
         padding: 4px 6px;
-        font-size: 0.72rem;
-        line-height: 1.25;
+        margin-bottom: 2px;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -464,7 +491,6 @@ with tab_advisor:
                     st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}s", f"{r2}h"
                 st.rerun()
 
-    st.markdown("---")
     h1, h2 = st.session_state.hero_card1, st.session_state.hero_card2
     r1, r2 = h1[0], h2[0]
     s1, s2 = h1[1], h2[1]
@@ -511,7 +537,6 @@ with tab_advisor:
                 st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}{p1}", f"{r2}{p2}"
                 st.rerun()
 
-    st.markdown("---")
     st.write("🃏 **보드 카드 선택 (플랍/턴/리버):**")
     used_cards = set(hero_cards + st.session_state.board_cards)
     slot_names = ["플랍1", "플랍2", "플랍3", "턴", "리버"]
@@ -556,7 +581,6 @@ with tab_advisor:
         best_korean_hand = get_best_korean_hand(hero_cards, board_cards)
         st.markdown(f"🏆 **최고 족보:** <span style='color:#f59e0b; font-weight:bold;'>{best_korean_hand}</span>", unsafe_allow_html=True)
 
-    st.markdown("---")
     st.write("📊 **팟 오즈 프리셋 선택:**")
     
     preset_cols = st.columns(4 if is_mobile else 8)
@@ -569,7 +593,6 @@ with tab_advisor:
 
     req_eq, pot_ratio_str, outs_req_flop, outs_turn = calculate_pot_odds_math(st.session_state.bet_ratio_pct)
 
-    st.markdown("---")
     if len(board_cards) in (0, 3, 4, 5):
         try:
             hero_treys = [Card.new(c) for c in hero_cards]
@@ -581,18 +604,18 @@ with tab_advisor:
             col_hero_left, col_math_right = st.columns(2)
             with col_hero_left:
                 st.markdown(f"""
-                    <div style="background-color:{card_bg}; border:1px solid #22c55e; border-radius:6px; padding:8px; text-align:center;">
+                    <div style="background-color:{card_bg}; border:1px solid #22c55e; border-radius:6px; padding:6px; text-align:center;">
                         <div style="color:#4ade80; font-size:0.8rem; font-weight:bold;">🎲 내 승률 ({opponents_count}명)</div>
-                        <div style="font-size:1.5rem; font-weight:bold; color:{text_main};">{eq_pct:.1f}%</div>
+                        <div style="font-size:1.4rem; font-weight:bold; color:{text_main};">{eq_pct:.1f}%</div>
                         <div style="font-size:0.7rem; color:{text_sub};">승 {win_rate*100:.0f}% / 무 {tie_rate*100:.0f}% / 패 {loss_rate*100:.0f}%</div>
                     </div>
                 """, unsafe_allow_html=True)
 
             with col_math_right:
                 st.markdown(f"""
-                    <div style="background-color:{card_bg}; border:1px solid #3b82f6; border-radius:6px; padding:8px; text-align:center;">
+                    <div style="background-color:{card_bg}; border:1px solid #3b82f6; border-radius:6px; padding:6px; text-align:center;">
                         <div style="color:#60a5fa; font-size:0.8rem; font-weight:bold;">📐 필요 승률</div>
-                        <div style="font-size:1.5rem; font-weight:bold; color:{text_main};">{req_eq:.1f}%</div>
+                        <div style="font-size:1.4rem; font-weight:bold; color:{text_main};">{req_eq:.1f}%</div>
                         <div style="font-size:0.7rem; color:{text_sub};">팟오즈 {pot_ratio_str}</div>
                     </div>
                 """, unsafe_allow_html=True)
@@ -602,7 +625,7 @@ with tab_advisor:
             elif eq_pct >= req_eq - 5.0: rec_action = "⚠️ 콜 / 폴드 경계"
             else: rec_action = "🛑 폴드 권장 (-EV)"
 
-            st.info(f"💡 **수학적 가치 판정:** {rec_action} (EV 차이: {ev_diff:+.1f}%p)")
+            st.info(f"💡 **수학적 판정:** {rec_action} (EV: {ev_diff:+.1f}%p)")
 
         except Exception as e:
             st.error(f"계산 오류: {str(e)}")
@@ -779,9 +802,9 @@ with tab_game:
                 for w in winners:
                     payouts[w] += split_amt
                 
-                pot_label = "🥇 메인 팟" if cap_idx == 0 else f"🪙 사이드 {cap_idx}"
+                pot_label = "🥇 메인" if cap_idx == 0 else f"🪙 사이드{cap_idx}"
                 eligible_names = ", ".join([get_player_name(p) for p in eligible_players])
-                winner_info = ", ".join([f"{get_player_name(w)} (+{split_amt} 칩)" for w in winners])
+                winner_info = ", ".join([f"{get_player_name(w)} (+{split_amt})" for w in winners])
                 winner_hands = " / ".join([hand_descs[w] for w in winners])
                 
                 pot_rows.append({
@@ -800,7 +823,7 @@ with tab_game:
 
         st.session_state.mg_pot_details_rows = pot_rows
         st.session_state.mg_payouts = payouts
-        st.session_state.mg_result_msg = "🏆 **핸드 쇼다운 완료! 정산 결과를 확인하세요.**"
+        st.session_state.mg_result_msg = "🏆 **쇼다운 완료! 결과를 확인하세요.**"
         st.session_state.mg_stage = "IDLE"
 
     def advance_poker_street():
@@ -1070,7 +1093,7 @@ with tab_game:
     if need_reset:
         reset_entire_tournament()
 
-    # 상단 요약 바
+    # 메인 상단 메트릭 요약 바
     active_indices = get_active_player_indices()
     active_players_count = len(active_indices)
 
@@ -1080,53 +1103,23 @@ with tab_game:
     m3.metric("🏆 생존", f"{active_players_count}/{total_players}")
     m4.metric("📌 단계", st.session_state.mg_stage)
 
-    # 핸드 결과 배너
+    # 핸드 결과 메시지
     if st.session_state.mg_result_msg:
         if "Hero" in st.session_state.mg_result_msg or "획득" in st.session_state.mg_result_msg:
             st.success(st.session_state.mg_result_msg)
         else:
             st.info(st.session_state.mg_result_msg)
 
-    # 사이드 팟 상세 표
+    # 사이드 팟 표
     if st.session_state.get("mg_pot_details_rows"):
         table_md = "| 팟 구분 | 팟 금액 | 자격자 | 🏆 승자 | 🃏 족보 |\n| :--- | :--- | :--- | :--- | :--- |\n"
         for row in st.session_state.mg_pot_details_rows:
             table_md += f"| **{row['label']}** | **{row['pot_amt']}** | {row['eligible']} | **{row['winners']}** | {row['hands']} |\n"
         st.markdown(table_md)
 
-    # 최종 손익 요약
-    payouts = st.session_state.get("mg_payouts", [])
-    contribs = st.session_state.get("mg_all_contribs", [])
-    win_summaries = []
-
-    for p_i, amt in enumerate(payouts):
-        if amt > 0:
-            p_name = get_player_name(p_i)
-            c_amt = contribs[p_i] if p_i < len(contribs) else 0
-            net_profit = amt - c_amt
-            sign = "+" if net_profit >= 0 else ""
-            win_summaries.append(f"**{p_name}** (베팅:{c_amt} ➔ 수령:{amt} | 순익:**{sign}{net_profit}**)")
-
-    if win_summaries:
-        st.info("💡 **최종 손익 요약:** " + " / ".join(win_summaries))
-
-    if st.session_state.mg_user_chips <= 0 and not st.session_state.mg_user_eliminated and st.session_state.mg_stage == "IDLE":
-        if st.session_state.mg_user_rebuys > 0:
-            st.error(f"⚠️ 칩 소진! 리바이 진행? (남은 횟수: {st.session_state.mg_user_rebuys}/{rebuy_setting})")
-            r_col1, r_col2 = st.columns(2)
-            if r_col1.button(f"🔄 Re-buy ({start_chips_setting} 칩)", type="primary", use_container_width=True):
-                st.session_state.mg_user_chips = start_chips_setting
-                st.session_state.mg_user_rebuys -= 1
-                start_new_hand()
-                st.rerun()
-            if r_col2.button("👀 관전 모드", use_container_width=True):
-                st.session_state.mg_user_eliminated = True
-                st.session_state.mg_hero_cards = []
-                st.rerun()
-
     sb_pos, bb_pos, _ = get_positions(st.session_state.mg_dealer_pos, active_indices)
 
-    # 1) 상대 AI 현황 (모바일 전용: 한 줄 최대 3명 배치 & 로그 아이콘 옆 나란히 표기)
+    # 1) 상대 AI 영역 (최대 3인 제한 및 아이콘 옆 히스토리 칩 2개까지 나란히 표시)
     st.write("🤖 **상대 AI 현황:**")
     
     cols_per_row = 3 if is_mobile else min(opponents_count, 9)
@@ -1150,14 +1143,14 @@ with tab_game:
                 is_folded = is_player_folded(p_idx)
                 
                 ai_logs = st.session_state.mg_player_histories.get(f"AI {idx+1}", [])
-                latest_badge = ai_logs[-1] if ai_logs else ""
+                # 히스토리 칩 최대 2개 나란히 연결
+                latest_badges = " ".join(ai_logs[-2:]) if ai_logs else ""
                 
                 allin_tag = " <span style='color:#ef4444; font-weight:bold;'>(ALL IN)</span>" if (chip_val == 0 and not is_elim and not is_folded) else ""
                 
-                # 상대 정보 간략화 포맷: 칩 : 400 (3/3) | 라운드/누적 : 0/0
                 st.markdown(f"""
                     <div class="opp-card-box">
-                        <b>AI {idx+1}</b>{pos_tag} {latest_badge}<br>
+                        <b>AI {idx+1}</b>{pos_tag} {latest_badges}<br>
                         <span style="color:#60a5fa;"><b>칩: {chip_val}</b> ({rebuy_left}/{rebuy_setting}){allin_tag}</span><br>
                         <span style="color:{text_sub};">라운드/누적: <b>{bet_val}/{total_contrib_val}</b></span>
                     </div>
@@ -1174,47 +1167,45 @@ with tab_game:
                         opp_rank = get_best_korean_hand(opp_cards, st.session_state.mg_board_cards)
                         st.markdown(f"{opp_h} <small style='color:#f59e0b;'>{opp_rank}</small>", unsafe_allow_html=True)
                     else:
-                        st.markdown("<span style='font-size:0.95rem;'>🂠 🂠</span>", unsafe_allow_html=True)
+                        st.markdown("<span style='font-size:0.9rem;'>🂠 🂠</span>", unsafe_allow_html=True)
 
-    # 2) 커뮤니티 보드 (글자 오른쪽에 나란히 표기)
-    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
-    cb_col1, cb_col2 = st.columns([1, 2] if is_mobile else [1, 4])
-    with cb_col1:
-        st.write("🃏 **커뮤니티 보드:**")
-    with cb_col2:
-        if st.session_state.mg_board_cards:
-            st.markdown("".join([format_card_html(c) for c in st.session_state.mg_board_cards]), unsafe_allow_html=True)
-        else:
-            st.markdown("<span style='color:gray; font-size:0.8rem;'>[ 프리플랍 ]</span>", unsafe_allow_html=True)
-
-    # 3) 내(Hero) 현황 (족보 이름 단축)
+    # 2) 내 핸드 + 히스토리 칩(최대 2개) + 커뮤니티 보드 한 줄 통합 구성
     hero_tag = ""
     if st.session_state.mg_dealer_pos == 0: hero_tag = " [BTN]"
     elif sb_pos == 0: hero_tag = " [SB]"
     elif bb_pos == 0: hero_tag = " [BB]"
 
     if st.session_state.mg_user_eliminated:
-        hero_h = "<span style='color:#ef4444;'>👀 [관전 모드]</span>"
+        hero_h = "<span style='color:#ef4444;'>👀 [관전]</span>"
         hero_rank_str = ""
     else:
-        hero_h = "".join([format_card_html(c) for c in st.session_state.mg_hero_cards]) if st.session_state.mg_hero_cards else "<span style='color:gray;'>[카드없음]</span>"
-        hero_rank_str = f" `({get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)})`" if len(st.session_state.mg_hero_cards + st.session_state.mg_board_cards) >= 5 else ""
+        hero_h = "".join([format_card_html(c) for c in st.session_state.mg_hero_cards]) if st.session_state.mg_hero_cards else "<span style='color:gray;'>[없음]</span>"
+        hero_rank_str = f" <small style='color:#f59e0b;'>({get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)})</small>" if len(st.session_state.mg_hero_cards + st.session_state.mg_board_cards) >= 5 else ""
     
     hero_allin_tag = " <span style='color:#ef4444; font-weight:bold;'>(ALL IN)</span>" if (st.session_state.mg_user_chips == 0 and not st.session_state.mg_user_eliminated and not st.session_state.mg_user_folded) else ""
 
     hero_logs = st.session_state.mg_player_histories.get("Hero", [])
-    latest_hero_badge = hero_logs[-1] if hero_logs else ""
+    # 내 히스토리 칩 2개
+    latest_hero_badges = " ".join(hero_logs[-2:]) if hero_logs else ""
+    board_h = "".join([format_card_html(c) for c in st.session_state.mg_board_cards]) if st.session_state.mg_board_cards else "<span style='color:gray; font-size:0.75rem;'>[프리플랍]</span>"
 
-    st.markdown(f"👤 **내 핸드{hero_tag}:** {hero_h}{hero_rank_str} {latest_hero_badge}", unsafe_allow_html=True)
+    # [요청사항 반영] 내 핸드와 커뮤니티 보드를 한 줄 플렉스(Flex) 박스로 통합
     st.markdown(f"""
-        <div style="font-size:0.75rem; color:{text_sub};">
-            💰 <b>칩: {st.session_state.mg_user_chips}</b> | 라운드/누적: <b>{st.session_state.mg_user_bet}/{st.session_state.mg_user_total_contrib}</b>{hero_allin_tag}
+        <div class="hero-board-box">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; gap:4px;">
+                <div style="flex:1; min-width:0;">
+                    <span style="font-weight:bold; font-size:0.8rem;">👤 내 핸드{hero_tag}:</span> {hero_h}{hero_rank_str} {latest_hero_badges}<br>
+                    <span style="font-size:0.72rem; color:{text_sub};">💰 <b>칩: {st.session_state.mg_user_chips}</b> | 라운드/누적: <b>{st.session_state.mg_user_bet}/{st.session_state.mg_user_total_contrib}</b>{hero_allin_tag}</span>
+                </div>
+                <div style="text-align:right; white-space:nowrap;">
+                    <span style="font-weight:bold; font-size:0.75rem;">🃏 보드:</span><br>{board_h}
+                </div>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # 4) IDLE 및 게임 대기 모드
+    # 3) 게임 대기 및 진행 액션 (간격 최소화 및 쓸데없는 라인 제거)
     if st.session_state.mg_stage == "IDLE":
-        st.markdown("---")
         if active_players_count == 1:
             if not st.session_state.mg_user_eliminated:
                 st.balloons()
@@ -1234,14 +1225,12 @@ with tab_game:
                 st.rerun()
 
     else:
-        st.markdown("---")
-        # 올인 / 관전 / 베팅 액션 선택부
         bettable_players = [i for i in range(total_players) if not is_player_eliminated(i) and not is_player_folded(i) and get_player_chips(i) > 0]
         no_more_betting = (len(bettable_players) <= 1)
         call_needed = max(0, st.session_state.mg_current_max_bet - st.session_state.mg_user_bet)
 
         if st.session_state.mg_user_eliminated:
-            st.info("👀 **관전 모드 진행 중입니다.**")
+            st.info("👀 **관전 모드 진행 중...**")
             if st.button("⏩ AI 턴 진행하기", type="primary", use_container_width=True):
                 run_poker_turn_engine()
                 st.rerun()
@@ -1279,9 +1268,12 @@ with tab_game:
                 min_raise_amt = call_needed + bb_setting
                 max_raise_amt = st.session_state.mg_user_chips
                 
-                # ----------------------------------------------------
-                # [전역 개선] 레이즈 박스 하단 문구 배치 및 Min/Max Clamping
-                # ----------------------------------------------------
+                # -----------------------------------------------------------------
+                # [전역 개선] 레이즈 구조 변경: 
+                # 1. 최상단: 레이즈 버튼
+                # 2. 중간: 숫자 입력 박스
+                # 3. 최하단: 최소~최대 표기만
+                # -----------------------------------------------------------------
                 act_col1, act_col2, act_col3 = st.columns(3 if is_mobile else [1.2, 2, 1])
 
                 # 1) Check / Call
@@ -1309,22 +1301,17 @@ with tab_game:
                         run_poker_turn_engine()
                         st.rerun()
 
-                # 2) Raise (입력값 자동 clamped 처리 및 문구 아래 배치)
+                # 2) Raise (최상단 레이즈 버튼 -> 중간 숫자박스 -> 최하단 최소~최대)
                 with act_col2:
                     if min_raise_amt <= max_raise_amt:
-                        raw_raise_val = st.number_input(
-                            "레이즈 금액 입력:",
-                            value=int(min_raise_amt),
-                            step=int(bb_setting),
-                            key=f"raise_input_{is_mobile}",
-                            label_visibility="collapsed"
-                        )
-                        # [클램핑] 최소 이하 시 최소로, 최대 초과 시 최대로 자동 조정
-                        custom_raise_val = max(min_raise_amt, min(raw_raise_val, max_raise_amt))
+                        raise_key = f"raise_input_val_{is_mobile}"
+                        raw_input_val = st.session_state.get(raise_key, min_raise_amt)
+                        custom_raise_val = max(min_raise_amt, min(raw_input_val, max_raise_amt))
                         
                         is_hero_raise_allin = (st.session_state.mg_user_chips - custom_raise_val == 0)
                         btn_raise_label = f"🔺 레이즈 ({custom_raise_val} 칩)" + ("(ALL IN)" if is_hero_raise_allin else "")
                         
+                        # [1. 최상단: 레이즈 버튼]
                         if st.button(btn_raise_label, use_container_width=True):
                             st.session_state.mg_user_chips -= custom_raise_val
                             st.session_state.mg_pot += custom_raise_val
@@ -1338,8 +1325,18 @@ with tab_game:
                             run_poker_turn_engine()
                             st.rerun()
 
-                        # [요청사항 반영] 레이즈 박스 아래에 최소~최대 문구 설정
-                        st.caption(f"📌 설정 가능 범위: **최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩** (범위 초과 시 자동 조정)")
+                        # [2. 중간: 숫자 박스]
+                        st.number_input(
+                            "레이즈 금액",
+                            value=int(custom_raise_val),
+                            step=int(bb_setting),
+                            key=raise_key,
+                            label_visibility="collapsed"
+                        )
+
+                        # [3. 최하단: 최소~최대 표기만]
+                        st.caption(f"최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩")
+
                     else:
                         allin_amt = st.session_state.mg_user_chips
                         if st.button(f"🔥 올인 ({allin_amt} 칩)", use_container_width=True):
@@ -1363,8 +1360,7 @@ with tab_game:
                     run_poker_turn_engine()
                     st.rerun()
 
-        # 5) [요청사항 반영] 내 실시간 승률 & 팟 오즈 영역 (액션 부분 '아래'로 이동)
-        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+        # 4) 내 실시간 승률 & 팟 오즈 (액션 아래에 조밀하게 노출)
         live_active_opp = sum(
             1 for idx in range(opponents_count) 
             if not is_player_eliminated(idx + 1) and not is_player_folded(idx + 1)
@@ -1388,15 +1384,15 @@ with tab_game:
 
         adv1, adv2 = st.columns(2)
         adv1.markdown(f"""
-            <div style="background-color:{card_bg}; border:1px solid #22c55e; border-radius:6px; padding:6px; text-align:center;">
-                <div style="color:#4ade80; font-size:0.75rem; font-weight:bold;">🎲 내 실시간 승률 ({live_active_opp}명)</div>
-                <div style="font-size:1.2rem; font-weight:bold; color:{text_main};">{live_eq:.1f}%</div>
+            <div style="background-color:{card_bg}; border:1px solid #22c55e; border-radius:5px; padding:4px; text-align:center;">
+                <div style="color:#4ade80; font-size:0.7rem; font-weight:bold;">🎲 내 승률 ({live_active_opp}명)</div>
+                <div style="font-size:1.1rem; font-weight:bold; color:{text_main};">{live_eq:.1f}%</div>
             </div>
         """, unsafe_allow_html=True)
 
         adv2.markdown(f"""
-            <div style="background-color:{card_bg}; border:1px solid #3b82f6; border-radius:6px; padding:6px; text-align:center;">
-                <div style="color:#60a5fa; font-size:0.75rem; font-weight:bold;">📐 필요 승률 (콜: {call_needed}칩)</div>
-                <div style="font-size:1.2rem; font-weight:bold; color:{text_main};">{req_eq_display}</div>
+            <div style="background-color:{card_bg}; border:1px solid #3b82f6; border-radius:5px; padding:4px; text-align:center;">
+                <div style="color:#60a5fa; font-size:0.7rem; font-weight:bold;">📐 필요 승률 (콜: {call_needed}칩)</div>
+                <div style="font-size:1.1rem; font-weight:bold; color:{text_main};">{req_eq_display}</div>
             </div>
         """, unsafe_allow_html=True)
