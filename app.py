@@ -384,7 +384,7 @@ for r in RANKS:
             div[class*="st-key-{key_id}"] button * {{ font-weight: bold !important; font-size: {btn_font_size} !important; }}
         """)
 
-# [요청 반영] "다음 핸드 진행" 버튼 전용 초록색 CSS 주입
+# "다음 핸드 진행" 버튼 전용 초록색 CSS 주입
 dynamic_button_styles.append("""
     div[class*="st-key-btn_next_hand"] button {
         background-color: #22c55e !important;
@@ -1354,9 +1354,7 @@ with tab_game:
             else:
                 st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
 
-    # -----------------------------------------------------------------
-    # 3) [요청 반영] 대기 모드: 다음 핸드 진행 (초록색) | 전체 새로 시작 (3:1 배치)
-    # -----------------------------------------------------------------
+    # 3) 대기 모드: 다음 핸드 진행 (초록색) | 전체 새로 시작 (3:1 배치)
     if st.session_state.mg_stage == "IDLE":
         if active_players_count == 1:
             if not st.session_state.mg_user_eliminated:
@@ -1365,7 +1363,6 @@ with tab_game:
             else:
                 st.error("😭 **최종 탈락하셨습니다.**")
 
-        # 3 : 1 비율 컬럼 생성
         col_next, col_reset = st.columns([3, 1])
 
         with col_next:
@@ -1491,7 +1488,7 @@ with tab_game:
                             )
 
                             st.caption(f"최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩")
-                        else: # PC 모드 (app_3.py 방식)
+                        else: # PC 모드
                             custom_raise_val = st.number_input(
                                 f"🔺 이번 턴 지출 금액 (최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩):",
                                 min_value=int(min_raise_amt),
@@ -1564,6 +1561,47 @@ with tab_game:
             live_req_eq = 0.0
             req_eq_display = "0.0% (체크 가능)"
 
+        # -----------------------------------------------------------------
+        # [요청 반영] 확률 바로 위 '실시간 상황 해설 UI'
+        # -----------------------------------------------------------------
+        if is_mobile:
+            if call_needed > 0:
+                if live_eq >= live_req_eq:
+                    badge_bg = "#064e3b" if is_dark else "#ecfdf5"
+                    badge_border = "#10b981"
+                    status_txt = f"💡 <b>콜 권장 (+EV)</b> | 필요 승률: <b>{live_req_eq:.1f}%</b> (필요 칩: <b>{call_needed}</b>)"
+                    detail_txt = f"내 승률(<b>{live_eq:.1f}%</b>)이 필요 승률보다 높아 콜이 유리합니다."
+                else:
+                    badge_bg = "#450a0a" if is_dark else "#fef2f2"
+                    badge_border = "#ef4444"
+                    status_txt = f"⚠️ <b>폴드 권장 (-EV)</b> | 필요 승률: <b>{live_req_eq:.1f}%</b> (필요 칩: <b>{call_needed}</b>)"
+                    detail_txt = f"내 승률(<b>{live_eq:.1f}%</b>)이 필요 승률보다 낮아 손실 구간입니다."
+            else:
+                badge_bg = "#0c4a6e" if is_dark else "#f0f9ff"
+                badge_border = "#0284c7"
+                status_txt = "💡 <b>체크 가능 (Free)</b> | 추가 지출 0 칩"
+                detail_txt = "상대 베팅이 없어 추가 칩 지출 없이 진행 가능합니다."
+
+            st.markdown(f"""
+                <div style="background-color:{badge_bg}; border:1px solid {badge_border}; border-radius:6px; padding:5px 8px; margin-bottom:4px; font-size:0.75rem; line-height:1.35;">
+                    <div>{status_txt}</div>
+                    <div style="color:{text_sub}; font-size:0.7rem; margin-top:2px;">{detail_txt}</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        else: # PC 모드 해설 UI
+            if call_needed > 0:
+                ratio_val = round((st.session_state.mg_pot + call_needed) / call_needed, 1)
+                commentary_msg = f"💡 **실시간 상황 해설:** 상대의 베팅/레이즈로 콜에 **{call_needed} 칩**이 필요합니다. 수학적 필요 승률은 **{live_req_eq:.1f}%** (팟오즈 {ratio_val}:1)이며, 내 승률(**{live_eq:.1f}%**)과 비교 시 " + ("**+EV(양의 기대값) 콜 구간**입니다." if live_eq >= live_req_eq else "**-EV(손실) 구간으로 폴드가 권장**됩니다.")
+                commentary_type = "info" if live_eq >= live_req_eq else "warning"
+            else:
+                commentary_msg = "💡 **실시간 상황 해설:** 추가 지출 칩이 0원인 **체크 가능 상황**입니다. 베팅 없이 무료로 다음 카드나 쇼다운을 볼 수 있으므로 필요 승률은 **0.0%**입니다."
+                commentary_type = "info"
+
+            if commentary_type == "info": st.info(commentary_msg)
+            else: st.warning(commentary_msg)
+
+        # 2열 승률 / 필요승률 메트릭 박스
         adv1, adv2 = st.columns(2)
         adv1.markdown(f"""
             <div style="background-color:{card_bg}; border:1px solid #22c55e; border-radius:5px; padding:4px; text-align:center;">
