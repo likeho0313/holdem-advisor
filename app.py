@@ -14,26 +14,34 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ----------------------------------------------------
-# [추가] Streamlit 상단 바 및 하단 푸터 숨김 CSS
-# ----------------------------------------------------
 st.markdown("""
     <style>
-    /* 상단 헤더 (메뉴 및 Deploy 버튼 포함) 숨김 */
+    /* 1. 상단 헤더 완전 제거 및 남은 여백(Padding) 상단으로 바짝 당기기 */
     header[data-testid="stHeader"] {
-        visibility: hidden !important;
-        height: 0rem !important;
+        display: none !important;
     }
-    /* 햄버거 메뉴 숨김 */
-    #MainMenu {
-        visibility: hidden !important;
+    .main .block-container {
+        padding-top: 1rem !important;  /* 상단 여백을 1rem(필요시 0rem)으로 축소 */
+        padding-bottom: 1rem !important;
     }
-    /* 하단 "Made with Streamlit" 푸터 숨김 */
+
+    /* 2. 하단 푸터 및 우측 하단 배지("Hosted with Streamlit" / "Created by ~") 완전 제거 */
     footer {
-        visibility: hidden !important;
+        display: none !important;
     }
-    /* Deploy 버튼 숨김 */
-    .stDeployButton {
+    #MainMenu {
+        display: none !important;
+    }
+    div[data-testid="stDecoration"] {
+        display: none !important;
+    }
+    div[data-testid="stStatusWidget"] {
+        display: none !important;
+    }
+    
+    /* Streamlit Cloud 전용 우측 하단 배지 요소 가리기 */
+    div[class*="viewerBadge"],
+    a[href*="streamlit.io"] {
         display: none !important;
     }
     </style>
@@ -154,7 +162,7 @@ start_chips_setting = st.sidebar.slider(
     "시작 칩 (Start Chips)",
     min_value=100,
     max_value=10000,
-    value=2000,
+    value=400,
     step=100
 )
 
