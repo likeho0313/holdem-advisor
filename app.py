@@ -129,6 +129,7 @@ is_mobile = (view_mode == "📱 모바일 모드")
 max_opponents = 3 if is_mobile else 9
 opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=max_opponents, value=min(3, max_opponents))
 
+# [수정] 시작 칩 초기값을 400으로 설정
 start_chips_setting = st.sidebar.slider(
     "시작 칩 (Start Chips)",
     min_value=100,
@@ -1562,30 +1563,26 @@ with tab_game:
             req_eq_display = "0.0% (체크 가능)"
 
         # -----------------------------------------------------------------
-        # [요청 반영] 확률 바로 위 '실시간 상황 해설 UI'
+        # [수정] 확률 바로 위 '실시간 상황 해설 UI' (한 줄 표기 형태)
         # -----------------------------------------------------------------
         if is_mobile:
             if call_needed > 0:
                 if live_eq >= live_req_eq:
                     badge_bg = "#064e3b" if is_dark else "#ecfdf5"
                     badge_border = "#10b981"
-                    status_txt = f"💡 <b>콜 권장 (+EV)</b> | 필요 승률: <b>{live_req_eq:.1f}%</b> (필요 칩: <b>{call_needed}</b>)"
-                    detail_txt = f"내 승률(<b>{live_eq:.1f}%</b>)이 필요 승률보다 높아 콜이 유리합니다."
+                    status_txt = f"💡 <b>콜 권장 (+EV)</b> | 필요 승률: <b>{live_req_eq:.1f}%</b> (필요 칩: <b>{call_needed}</b>) 콜이 유리한 +EV 구간입니다."
                 else:
                     badge_bg = "#450a0a" if is_dark else "#fef2f2"
                     badge_border = "#ef4444"
-                    status_txt = f"⚠️ <b>폴드 권장 (-EV)</b> | 필요 승률: <b>{live_req_eq:.1f}%</b> (필요 칩: <b>{call_needed}</b>)"
-                    detail_txt = f"내 승률(<b>{live_eq:.1f}%</b>)이 필요 승률보다 낮아 손실 구간입니다."
+                    status_txt = f"⚠️ <b>폴드 권장 (-EV)</b> | 필요 승률: <b>{live_req_eq:.1f}%</b> (필요 칩: <b>{call_needed}</b>) 손실이 예상되는 -EV 구간입니다."
             else:
                 badge_bg = "#0c4a6e" if is_dark else "#f0f9ff"
                 badge_border = "#0284c7"
-                status_txt = "💡 <b>체크 가능 (Free)</b> | 추가 지출 0 칩"
-                detail_txt = "상대 베팅이 없어 추가 칩 지출 없이 진행 가능합니다."
+                status_txt = f"💡 <b>체크 가능 (Free)</b> | 필요 승률: <b>0.0%</b> (필요 칩: <b>0</b>) 리스크 없는 체크 구간입니다."
 
             st.markdown(f"""
-                <div style="background-color:{badge_bg}; border:1px solid {badge_border}; border-radius:6px; padding:5px 8px; margin-bottom:4px; font-size:0.75rem; line-height:1.35;">
-                    <div>{status_txt}</div>
-                    <div style="color:{text_sub}; font-size:0.7rem; margin-top:2px;">{detail_txt}</div>
+                <div style="background-color:{badge_bg}; border:1px solid {badge_border}; border-radius:6px; padding:6px 8px; margin-bottom:4px; font-size:0.75rem; line-height:1.35;">
+                    {status_txt}
                 </div>
             """, unsafe_allow_html=True)
 
