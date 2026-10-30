@@ -9,7 +9,7 @@ from treys import Card, Deck, Evaluator
 # 0. 페이지 기본 설정 및 초기 세션 상태
 # ==========================================
 st.set_page_config(
-    page_title="텍사스 홀덤 실시간 승률 & 수학적 어드바이저",
+    page_title="텍사스 홀덤 실시간 승률 & 모의게임 어드바이저",
     page_icon="♠️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -24,7 +24,7 @@ RANK_NAME = {14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: '10', 9: '9', 8: '8', 7: '7
 
 EVALUATOR = Evaluator()
 
-# 세션 상태 초기화 (디폴트 팟 베팅: 25.0%)
+# --- [어드바이저 세션 상태 초기화] ---
 if "hero_card1" not in st.session_state:
     st.session_state.hero_card1 = "As"
 if "hero_card2" not in st.session_state:
@@ -32,7 +32,33 @@ if "hero_card2" not in st.session_state:
 if "board_cards" not in st.session_state:
     st.session_state.board_cards = []
 if "bet_ratio_pct" not in st.session_state:
-    st.session_state.bet_ratio_pct = 25.0  # 디폴트 25% 팟 베팅 설정
+    st.session_state.bet_ratio_pct = 25.0
+
+# --- [모의게임 세션 상태 초기화] ---
+if "mg_user_chips" not in st.session_state:
+    st.session_state.mg_user_chips = 1000
+if "mg_opp_chips" not in st.session_state:
+    st.session_state.mg_opp_chips = 1000
+if "mg_pot" not in st.session_state:
+    st.session_state.mg_pot = 0
+if "mg_stage" not in st.session_state:
+    st.session_state.mg_stage = "IDLE"  # IDLE, PREFLOP, FLOP, TURN, RIVER, SHOWDOWN
+if "mg_hero_cards" not in st.session_state:
+    st.session_state.mg_hero_cards = []
+if "mg_opp_cards" not in st.session_state:
+    st.session_state.mg_opp_cards = []
+if "mg_board_cards" not in st.session_state:
+    st.session_state.mg_board_cards = []
+if "mg_deck" not in st.session_state:
+    st.session_state.mg_deck = []
+if "mg_user_bet" not in st.session_state:
+    st.session_state.mg_user_bet = 0
+if "mg_opp_bet" not in st.session_state:
+    st.session_state.mg_opp_bet = 0
+if "mg_result_msg" not in st.session_state:
+    st.session_state.mg_result_msg = ""
+if "mg_last_action" not in st.session_state:
+    st.session_state.mg_last_action = ""
 
 
 # ==========================================
@@ -59,40 +85,33 @@ TIER_C = {
 
 
 # ==========================================
-# 2. 사이드바: 옵션 슬라이더, 테마 선택 및 사용 설명서
+# 2. 사이드바: 옵션 및 사용 설명서
 # ==========================================
-# 상대 플레이어 최대 9명 (나 포함 총 10명 플레이어 지원)
-opponents_count = st.sidebar.slider("상대 플레이어 수 (나 포함 최대 10명)", min_value=1, max_value=9, value=2)
+opponents_count = st.sidebar.slider("상대 플레이어 수 (어드바이저 모드)", min_value=1, max_value=9, value=2)
 sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
 
 st.sidebar.markdown("---")
-
-st.sidebar.title("⚙️ 설정 & 게임 옵션")
+st.sidebar.title("⚙️ 설정 & UI 테마")
 
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
 is_dark = (theme_mode == "🌙 다크 모드")
 
-# 테마 선택 바로 아래 배치된 서비스 사용 설명서
 with st.sidebar.expander("📖 서비스 사용 설명서", expanded=True):
     st.markdown("""
-    **1️⃣ 내 핸드 선택**
-    - 13x13 매트릭스 표에서 내 핸드(예: AKs, 88)를 클릭합니다.
-    - 아래 **'무늬 원클릭 변경'**으로 무늬(♠, ♥, ♦, ♣) 조합을 빠르게 세부 변경할 수 있습니다.
+    **📊 실시간 승률 어드바이저 탭**
+    1. 169 매트릭스에서 핸드를 선택하고 무늬 조합을 고릅니다.
+    2. 커뮤니티 보드(플랍/턴/리버) 카드를 추가합니다.
+    3. 상대 베팅 크기를 선택하여 '내 승률'과 '콜 필요 승률'을 실시간 비교합니다.
 
-    **2️⃣ 커뮤니티 보드 선택**
-    - 하단 카드 피커에서 **플랍(3장)**, **턴(1장)**, **리버(1장)** 카드를 선택합니다.
-    - 선택된 카드는 **'❌ 삭제'** 버튼으로 개별 제거가 가능합니다.
-
-    **3️⃣ 상대 베팅 크기 선택**
-    - 상대방의 팟 대비 베팅 비율(25%~200%)을 선택하면 **콜 필요 승률(참고용)**이 자동 산출됩니다.
-
-    **4️⃣ 승률 & 가치 진단 확인**
-    - 왼쪽의 **'내 승률'**이 오른쪽의 **'콜 필요 승률(참고용)'**보다 높은지 비교하여 Call / Fold / Raise 수학적 판정을 얻습니다.
+    **🎮 모의게임 (홀덤 연습) 탭**
+    1. **새 판 시작**을 눌러 1000칩으로 AI 상대와 1:1 홀덤을 진행합니다.
+    2. 프리플랍, 플랍, 턴, 리버 단계를 거치며 **Check / Call / Raise / Fold**를 결정합니다.
+    3. 쇼다운 시 승리하면 팟 전체 칩을 획득합니다!
     """)
 
 
 # ==========================================
-# 3. 테마별 고대비 색상 체계 설정
+# 3. 테마별 색상 및 전역 CSS 주입
 # ==========================================
 if is_dark:
     app_bg = "#0f172a"
@@ -101,21 +120,11 @@ if is_dark:
     text_sub = "#94a3b8"
     border_col = "#334155"
     
-    bg_s = "#14532d"  # S급: 다크 에메랄드
-    bg_a = "#1e3a8a"  # A급: 다크 네이비
-    bg_b = "#713f12"  # B급: 다크 브론즈
-    bg_c = "#581c87"  # C급: 다크 퍼플
-    bg_d = "#1e293b"  # D급: 다크 슬레이트
-    
+    bg_s, bg_a, bg_b, bg_c, bg_d = "#14532d", "#1e3a8a", "#713f12", "#581c87", "#1e293b"
     badge_txt = "#ffffff"
-    txt_pair = "#93c5fd"
-    txt_suited = "#86efac"
-    txt_off = "#fdba74"
-    
-    btn_preset_active_bg = "#3b82f6"
-    btn_preset_active_txt = "#ffffff"
-    btn_preset_inactive_bg = "#1e293b"
-    btn_preset_inactive_txt = "#f8fafc"
+    txt_pair, txt_suited, txt_off = "#93c5fd", "#86efac", "#fdba74"
+    btn_preset_active_bg, btn_preset_active_txt = "#3b82f6", "#ffffff"
+    btn_preset_inactive_bg, btn_preset_inactive_txt = "#1e293b", "#f8fafc"
 else:
     app_bg = "#f8fafc"
     card_bg = "#ffffff"
@@ -123,21 +132,11 @@ else:
     text_sub = "#475569"
     border_col = "#cbd5e1"
     
-    bg_s = "#a7f3d0"  # S급: 파스텔 민트
-    bg_a = "#bae6fd"  # A급: 파스텔 블루
-    bg_b = "#fef08a"  # B급: 파스텔 옐로우
-    bg_c = "#e9d5ff"  # C급: 파스텔 퍼플
-    bg_d = "#ffffff"  # D급: 순백색
-    
+    bg_s, bg_a, bg_b, bg_c, bg_d = "#a7f3d0", "#bae6fd", "#fef08a", "#e9d5ff", "#ffffff"
     badge_txt = "#0f172a"
-    txt_pair = "#1d4ed8"
-    txt_suited = "#15803d"
-    txt_off = "#c2410c"
-    
-    btn_preset_active_bg = "#2563eb"
-    btn_preset_active_txt = "#ffffff"
-    btn_preset_inactive_bg = "#ffffff"
-    btn_preset_inactive_txt = "#0f172a"
+    txt_pair, txt_suited, txt_off = "#1d4ed8", "#15803d", "#c2410c"
+    btn_preset_active_bg, btn_preset_active_txt = "#2563eb", "#ffffff"
+    btn_preset_inactive_bg, btn_preset_inactive_txt = "#ffffff", "#0f172a"
 
 
 def hand_type(r1, r2):
@@ -154,17 +153,11 @@ def get_hand_colors(r1, r2):
     ht = hand_type(r1, r2)
     i1, i2 = RANKS.index(r1), RANKS.index(r2)
     txt_color = txt_pair if i1 == i2 else (txt_suited if i1 < i2 else txt_off)
-    
-    if ht in TIER_S:
-        return txt_color, bg_s
-    elif ht in TIER_A:
-        return txt_color, bg_a
-    elif ht in TIER_B:
-        return txt_color, bg_b
-    elif ht in TIER_C:
-        return txt_color, bg_c
-    else:
-        return txt_color, bg_d
+    if ht in TIER_S: return txt_color, bg_s
+    elif ht in TIER_A: return txt_color, bg_a
+    elif ht in TIER_B: return txt_color, bg_b
+    elif ht in TIER_C: return txt_color, bg_c
+    else: return txt_color, bg_d
 
 
 def get_suit_md(suit_code):
@@ -181,7 +174,17 @@ def format_card_md(rank, suit_code):
     return f"{rank_str}{symbol}"
 
 
-# 한국식 7포커 족보 계산 헬퍼 함수
+def format_card_html(card_code):
+    if not card_code or len(card_code) < 2:
+        return ""
+    rank = card_code[0].replace("T", "10")
+    suit = card_code[1]
+    symbol = SUIT_SYMBOLS.get(suit, "")
+    css_class = f"suit-{suit}"
+    return f'<span class="card-badge {css_class}">{rank}{symbol}</span>'
+
+
+# 한국식 7포커 족보 계산 함수
 def eval_5cards_korean(combo):
     ranks = sorted([RANK_MAP[c[0]] for c in combo], reverse=True)
     suits = [c[1] for c in combo]
@@ -194,353 +197,55 @@ def eval_5cards_korean(combo):
     counts = Counter(ranks)
     freq = sorted([(cnt, r) for r, cnt in counts.items()], key=lambda x: (x[0], x[1]), reverse=True)
     
-    if is_flush and is_mountain:
-        return (13, ranks), "👑 로얄 스트레이트 플러쉬"
-    elif is_flush and is_back_straight:
-        return (12, ranks), "🌈 백 스트레이트 플러쉬"
-    elif is_flush and is_reg_straight:
-        return (11, ranks[0]), f"🔥 스트레이트 플러쉬 ({RANK_NAME[ranks[0]]}-High)"
-    elif freq[0][0] == 4:
-        return (10, freq[0][1], freq[1][1]), f"💥 포카드 ({RANK_NAME[freq[0][1]]})"
-    elif freq[0][0] == 3 and freq[1][0] == 2:
-        return (9, freq[0][1], freq[1][1]), f"🏠 풀하우스 ({RANK_NAME[freq[0][1]]} & {RANK_NAME[freq[1][1]]})"
-    elif is_flush:
-        return (8, ranks), f"🎨 플러쉬 ({RANK_NAME[ranks[0]]}-High)"
-    elif is_mountain:
-        return (7, 14), "⛰️ 마운틴 (10, J, Q, K, A)"
-    elif is_back_straight:
-        return (6, 5), "👶 백스트레이트 (A, 2, 3, 4, 5)"
-    elif is_reg_straight:
-        return (5, ranks[0]), f"📏 스트레이트 ({RANK_NAME[ranks[0]]}-High)"
-    elif freq[0][0] == 3:
-        return (4, freq[0][1], [f[1] for f in freq[1:]]), f"☘️ 트리플 ({RANK_NAME[freq[0][1]]})"
-    elif freq[0][0] == 2 and freq[1][0] == 2:
-        return (3, freq[0][1], freq[1][1], freq[2][1]), f"✌️ 투 페어 ({RANK_NAME[freq[0][1]]} & {RANK_NAME[freq[1][1]]})"
-    elif freq[0][0] == 2:
-        return (2, freq[0][1], [f[1] for f in freq[1:]]), f"1️⃣ 원 페어 ({RANK_NAME[freq[0][1]]})"
-    else:
-        return (1, ranks), f"🃏 노 페어 ({RANK_NAME[ranks[0]]}-High)"
+    if is_flush and is_mountain: return (13, ranks), "👑 로얄 스트레이트 플러쉬"
+    elif is_flush and is_back_straight: return (12, ranks), "🌈 백 스트레이트 플러쉬"
+    elif is_flush and is_reg_straight: return (11, ranks[0]), f"🔥 스트레이트 플러쉬 ({RANK_NAME[ranks[0]]}-High)"
+    elif freq[0][0] == 4: return (10, freq[0][1], freq[1][1]), f"💥 포카드 ({RANK_NAME[freq[0][1]]})"
+    elif freq[0][0] == 3 and freq[1][0] == 2: return (9, freq[0][1], freq[1][1]), f"🏠 풀하우스 ({RANK_NAME[freq[0][1]]} & {RANK_NAME[freq[1][1]]})"
+    elif is_flush: return (8, ranks), f"🎨 플러쉬 ({RANK_NAME[ranks[0]]}-High)"
+    elif is_mountain: return (7, 14), "⛰️ 마운틴 (10, J, Q, K, A)"
+    elif is_back_straight: return (6, 5), "👶 백스트레이트 (A, 2, 3, 4, 5)"
+    elif is_reg_straight: return (5, ranks[0]), f"📏 스트레이트 ({RANK_NAME[ranks[0]]}-High)"
+    elif freq[0][0] == 3: return (4, freq[0][1], [f[1] for f in freq[1:]]), f"☘️ 트리플 ({RANK_NAME[freq[0][1]]})"
+    elif freq[0][0] == 2 and freq[1][0] == 2: return (3, freq[0][1], freq[1][1], freq[2][1]), f"✌️ 투 페어 ({RANK_NAME[freq[0][1]]} & {RANK_NAME[freq[1][1]]})"
+    elif freq[0][0] == 2: return (2, freq[0][1], [f[1] for f in freq[1:]]), f"1️⃣ 원 페어 ({RANK_NAME[freq[0][1]]})"
+    else: return (1, ranks), f"🃏 노 페어 ({RANK_NAME[ranks[0]]}-High)"
 
 
 def get_best_korean_hand(hero_cards, board_cards):
     all_cards = hero_cards + board_cards
-    if len(all_cards) < 5:
-        return "보드 카드를 더 선택해주세요 (최소 5장 필요)"
-    
+    if len(all_cards) < 5: return "보드 카드를 더 선택해주세요"
     best_score = None
     best_name = ""
-    
     for combo in itertools.combinations(all_cards, 5):
         score, name = eval_5cards_korean(combo)
         if best_score is None or score > best_score:
             best_score = score
             best_name = name
-            
     return best_name
 
 
-# 현재 선택된 핸드의 카드 무늬 정보
-cur_h1 = st.session_state.hero_card1
-cur_h2 = st.session_state.hero_card2
-cur_s1 = cur_h1[1] if len(cur_h1) > 1 else "s"
-cur_s2 = cur_h2[1] if len(cur_h2) > 1 else "h"
-
-dynamic_button_styles = []
-
-# 1) 169 핸드 표 버튼 스타일링
-for r1 in RANKS:
-    for r2 in RANKS:
-        ht = hand_type(r1, r2)
-        txt_col, bg_col = get_hand_colors(r1, r2)
-        
-        selected_ht = hand_type(cur_h1[0], cur_h2[0])
-        is_selected = (ht == selected_ht)
-        
-        key_id = f"mat_{r1}_{r2}"
-        
-        if is_selected:
-            btn_bg = "#dc2626"
-            btn_txt = "#ffffff"
-            btn_border = "#f59e0b"
-            extra_style = "font-weight: 900 !important; box-shadow: 0 0 8px #f59e0b !important;"
-        else:
-            btn_bg = bg_col
-            btn_txt = txt_col
-            btn_border = border_col
-            extra_style = ""
-            
-        dynamic_button_styles.append(f"""
-            div[class*="st-key-{key_id}"] button,
-            div[class*="st-key-{key_id}"] button:hover {{
-                background-color: {btn_bg} !important;
-                border: 1px solid {btn_border} !important;
-                {extra_style}
-            }}
-            div[class*="st-key-{key_id}"] button * {{
-                color: {btn_txt} !important;
-                font-weight: bold !important;
-            }}
-        """)
-
-# 2) 원클릭 카드 피커 버튼 스타일링
-for r in RANKS:
-    for s in SUITS:
-        card_code = f"{r}{s}"
-        key_id = f"pick_card_{card_code}"
-        has_red = s in ["h", "d"]
-        
-        bg_c_picker = "#2a1215" if (is_dark and has_red) else ("#1e293b" if is_dark else ("#fef2f2" if has_red else "#ffffff"))
-        border_c_picker = "#991b1b" if has_red else ("#475569" if is_dark else "#cbd5e1")
-            
-        dynamic_button_styles.append(f"""
-            div[class*="st-key-{key_id}"] button,
-            div[class*="st-key-{key_id}"] button:hover {{
-                background-color: {bg_c_picker} !important;
-                border: 1px solid {border_c_picker} !important;
-            }}
-            div[class*="st-key-{key_id}"] button * {{
-                font-weight: bold !important;
-                font-size: 0.88rem !important;
-            }}
-        """)
-
-# 3) 무늬 원클릭 변경 버튼 선택 하이라이트 스타일링
-all_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
-for p1, p2 in all_combos:
-    for prefix in ["quick_pair", "quick_off"]:
-        key_id = f"{prefix}_{p1}_{p2}"
-        is_selected = (cur_s1 == p1 and cur_s2 == p2) or (cur_s1 == p2 and cur_s2 == p1)
-        
-        if is_selected:
-            bg_c_btn = "#dc2626"
-            txt_c_btn = "#ffffff"
-            extra_style = "border: 2px solid #f59e0b !important; box-shadow: 0 0 8px #f59e0b !important; font-weight: 900 !important;"
-        else:
-            bg_c_btn = "#1e293b" if is_dark else "#ffffff"
-            txt_c_btn = text_main
-            extra_style = f"border: 1px solid {border_col} !important;"
-        
-        dynamic_button_styles.append(f"""
-            div[class*="st-key-{key_id}"] button,
-            div[class*="st-key-{key_id}"] button:hover {{
-                background-color: {bg_c_btn} !important;
-                {extra_style}
-            }}
-            div[class*="st-key-{key_id}"] button * {{
-                color: {txt_c_btn} !important;
-                font-weight: bold !important;
-            }}
-        """)
-
-for s in SUITS:
-    key_id = f"quick_suited_{s}"
-    is_selected = (cur_s1 == s and cur_s2 == s)
-    
-    if is_selected:
-        bg_c_btn = "#dc2626"
-        txt_c_btn = "#ffffff"
-        extra_style = "border: 2px solid #f59e0b !important; box-shadow: 0 0 8px #f59e0b !important; font-weight: 900 !important;"
-    else:
-        has_red = s in ["h", "d"]
-        bg_c_btn = "#2a1215" if (is_dark and has_red) else ("#1e293b" if is_dark else ("#fef2f2" if has_red else "#ffffff"))
-        txt_c_btn = text_main
-        border_c_btn = "#991b1b" if has_red else ("#475569" if is_dark else "#cbd5e1")
-        extra_style = f"border: 1px solid {border_c_btn} !important;"
-
-    dynamic_button_styles.append(f"""
-        div[class*="st-key-{key_id}"] button,
-        div[class*="st-key-{key_id}"] button:hover {{
-            background-color: {bg_c_btn} !important;
-            {extra_style}
-        }}
-        div[class*="st-key-{key_id}"] button * {{
-            color: {txt_c_btn} !important;
-            font-weight: bold !important;
-        }}
-    """)
-
-# 4) % 팟 프리셋 버튼 스타일링
-presets_vals = [25.0, 33.3, 50.0, 66.6, 75.0, 100.0, 150.0, 200.0]
-for idx, val in enumerate(presets_vals):
-    key_id = f"preset_btn_{idx}"
-    is_active = (st.session_state.bet_ratio_pct == val)
-    
-    p_bg = btn_preset_active_bg if is_active else btn_preset_inactive_bg
-    p_txt = btn_preset_active_txt if is_active else btn_preset_inactive_txt
-    p_border = "#1d4ed8" if (is_active and not is_dark) else ("#60a5fa" if is_active else border_col)
-    
-    dynamic_button_styles.append(f"""
-        div[class*="st-key-{key_id}"] button,
-        div[class*="st-key-{key_id}"] button:hover,
-        div[class*="st-key-{key_id}"] button:focus {{
-            background-color: {p_bg} !important;
-            border: 1px solid {p_border} !important;
-        }}
-        div[class*="st-key-{key_id}"] button * {{
-            color: {p_txt} !important;
-            font-weight: bold !important;
-        }}
-    """)
-
-# 5) 보드 삭제 및 전체 초기화 버튼 전용 테마별 고대비 스타일링
-del_btn_bg = "#450a0a" if is_dark else "#fef2f2"
-del_btn_txt = "#f87171" if is_dark else "#991b1b"
-del_btn_border = "#991b1b" if is_dark else "#fca5a5"
-
-for i in range(5):
-    key_id = f"remove_board_{i}"
-    dynamic_button_styles.append(f"""
-        div[class*="st-key-{key_id}"] button,
-        div[class*="st-key-{key_id}"] button:hover,
-        div[class*="st-key-{key_id}"] button:focus {{
-            background-color: {del_btn_bg} !important;
-            border: 1px solid {del_btn_border} !important;
-        }}
-        div[class*="st-key-{key_id}"] button * {{
-            color: {del_btn_txt} !important;
-            font-weight: bold !important;
-        }}
-    """)
-
-reset_btn_bg = "#7f1d1d" if is_dark else "#fee2e2"
-reset_btn_txt = "#ffffff" if is_dark else "#991b1b"
-reset_btn_border = "#b91c1c" if is_dark else "#f87171"
-
-dynamic_button_styles.append(f"""
-    div[class*="st-key-reset_board_all"] button,
-    div[class*="st-key-reset_board_all"] button:hover,
-    div[class*="st-key-reset_board_all"] button:focus {{
-        background-color: {reset_btn_bg} !important;
-        border: 1px solid {reset_btn_border} !important;
-    }}
-    div[class*="st-key-reset_board_all"] button * {{
-        color: {reset_btn_txt} !important;
-        font-weight: bold !important;
-    }}
-""")
-
-# 전역 스타일 주입
-st.markdown(f"""
-    <style>
-    .stApp {{
-        background-color: {app_bg} !important;
-        color: {text_main} !important;
-    }}
-    
-    div[data-testid="stHorizontal"] > div {{
-        padding: 0px 1px !important;
-    }}
-    
-    .stButton button {{
-        width: 100% !important;
-        padding: 3px 0px !important;
-        font-size: 0.80rem !important;
-        min-height: 36px !important;
-        border-radius: 4px !important;
-    }}
-    
-    {" ".join(dynamic_button_styles)}
-
-    /* 범례 전용 뱃지 스타일 */
-    .tier-badge {{
-        display: inline-block;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-weight: bold;
-        font-size: 0.85rem;
-        margin: 0 2px;
-    }}
-    .tier-badge-s {{ background-color: {bg_s} !important; color: {badge_txt} !important; }}
-    .tier-badge-a {{ background-color: {bg_a} !important; color: {badge_txt} !important; }}
-    .tier-badge-b {{ background-color: {bg_b} !important; color: {badge_txt} !important; }}
-    .tier-badge-c {{ background-color: {bg_c} !important; color: {badge_txt} !important; }}
-    .tier-badge-d {{ background-color: {bg_d} !important; color: {badge_txt} !important; border: 1px solid {border_col} !important; }}
-
-    .card-badge {{
-        display: inline-block;
-        padding: 4px 10px;
-        font-size: 1.1rem;
-        font-weight: bold;
-        border-radius: 6px;
-        margin: 2px;
-    }}
-    .suit-s, .suit-c {{ background-color: #1e293b; color: #ffffff; border: 1px solid #475569; }}
-    .suit-h, .suit-d {{ background-color: #450a0a; color: #f87171; border: 1px solid #991b1b; }}
-    
-    .action-card {{
-        background-color: {card_bg};
-        border-radius: 8px;
-        padding: 15px;
-        border: 1px solid {border_col};
-        text-align: center;
-        margin-top: 10px;
-    }}
-    .action-title {{ font-size: 1.5rem; font-weight: bold; }}
-    .action-fold {{ color: #f87171; }}
-    .action-check {{ color: #38bdf8; }}
-    .action-call {{ color: #facc15; }}
-    .action-raise {{ color: #4ade80; }}
-    .action-allin {{ color: #fb923c; }}
-
-    @media screen and (max-height: 650px), (max-width: 920px) {{
-        .block-container {{ padding: 0.5rem !important; }}
-        .stButton button {{
-            padding: 1px 0px !important;
-            font-size: 0.72rem !important;
-            min-height: 28px !important;
-        }}
-        .card-badge {{ padding: 2px 5px !important; font-size: 0.9rem !important; }}
-    }}
-    </style>
-""", unsafe_allow_html=True)
-
-
-# ==========================================
-# 4. 헬퍼 계산 함수
-# ==========================================
-def format_card_html(card_code):
-    if not card_code or len(card_code) < 2:
-        return ""
-    rank = card_code[0].replace("T", "10")
-    suit = card_code[1]
-    symbol = SUIT_SYMBOLS.get(suit, "")
-    css_class = f"suit-{suit}"
-    return f'<span class="card-badge {css_class}">{rank}{symbol}</span>'
-
-
-def calculate_monte_carlo_equity(hero_cards, board_cards, opponents_count, iterations=3000):
+def calculate_monte_carlo_equity(hero_cards, board_cards, opponents_count, iterations=2500):
     known_cards = hero_cards + board_cards
     full_deck = Deck.GetFullDeck()
     deck = [c for c in full_deck if c not in known_cards]
-    
     missing_board_count = 5 - len(board_cards)
     draw_count = missing_board_count + (opponents_count * 2)
-    
     wins, ties, losses = 0.0, 0.0, 0.0
-    
     for _ in range(iterations):
         drawn = random.sample(deck, draw_count)
         sim_board = board_cards + drawn[:missing_board_count]
-        
         offset = missing_board_count
         opponents_cards = []
         for _ in range(opponents_count):
             opponents_cards.append(drawn[offset:offset+2])
             offset += 2
-            
         hero_score = EVALUATOR.evaluate(sim_board, hero_cards)
         opp_scores = [EVALUATOR.evaluate(sim_board, opp) for opp in opponents_cards]
-        
         best_opp_score = min(opp_scores)
-        
-        if hero_score < best_opp_score:
-            wins += 1.0
-        elif hero_score == best_opp_score:
-            tying_count = opp_scores.count(hero_score) + 1
-            ties += (1.0 / tying_count)
-        else:
-            losses += 1.0
-            
+        if hero_score < best_opp_score: wins += 1.0
+        elif hero_score == best_opp_score: ties += (1.0 / (opp_scores.count(hero_score) + 1))
+        else: losses += 1.0
     equity = (wins + ties) / iterations
     return equity, wins/iterations, ties/iterations, (iterations - wins - ties)/iterations
 
@@ -549,336 +254,482 @@ def calculate_pot_odds_math(bet_pct):
     b = bet_pct / 100.0
     equity_to_call = (b / (1.0 + 2.0 * b)) * 100.0
     ratio_first = round((1.0 + b) / b, 1) if b > 0 else 0
-    
     outs_flop = round(equity_to_call / 4.0, 1)
     outs_turn = round(equity_to_call / 2.0, 1)
-    
     return equity_to_call, f"{ratio_first} : 1", outs_flop, outs_turn
 
 
-# ==========================================
-# 5. 메인 화면: 169 핸드 매트릭스
-# ==========================================
-st.title("♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
+# 버튼 및 뱃지 동적 CSS 스타일
+dynamic_button_styles = []
 
+# 1) 169 핸드 매트릭스 버튼
+cur_h1, cur_h2 = st.session_state.hero_card1, st.session_state.hero_card2
+cur_s1 = cur_h1[1] if len(cur_h1) > 1 else "s"
+cur_s2 = cur_h2[1] if len(cur_h2) > 1 else "h"
+
+for r1 in RANKS:
+    for r2 in RANKS:
+        ht = hand_type(r1, r2)
+        txt_col, bg_col = get_hand_colors(r1, r2)
+        is_selected = (ht == hand_type(cur_h1[0], cur_h2[0]))
+        key_id = f"mat_{r1}_{r2}"
+        if is_selected:
+            btn_bg, btn_txt, btn_border = "#dc2626", "#ffffff", "#f59e0b"
+            extra_style = "font-weight: 900 !important; box-shadow: 0 0 8px #f59e0b !important;"
+        else:
+            btn_bg, btn_txt, btn_border, extra_style = bg_col, txt_col, border_col, ""
+        dynamic_button_styles.append(f"""
+            div[class*="st-key-{key_id}"] button, div[class*="st-key-{key_id}"] button:hover {{
+                background-color: {btn_bg} !important; border: 1px solid {btn_border} !important; {extra_style}
+            }}
+            div[class*="st-key-{key_id}"] button * {{ color: {btn_txt} !important; font-weight: bold !important; }}
+        """)
+
+# 2) 카드 피커 버튼
+for r in RANKS:
+    for s in SUITS:
+        card_code = f"{r}{s}"
+        key_id = f"pick_card_{card_code}"
+        has_red = s in ["h", "d"]
+        bg_c_picker = "#2a1215" if (is_dark and has_red) else ("#1e293b" if is_dark else ("#fef2f2" if has_red else "#ffffff"))
+        border_c_picker = "#991b1b" if has_red else ("#475569" if is_dark else "#cbd5e1")
+        dynamic_button_styles.append(f"""
+            div[class*="st-key-{key_id}"] button, div[class*="st-key-{key_id}"] button:hover {{
+                background-color: {bg_c_picker} !important; border: 1px solid {border_c_picker} !important;
+            }}
+            div[class*="st-key-{key_id}"] button * {{ font-weight: bold !important; font-size: 0.88rem !important; }}
+        """)
+
+# 전역 CSS 적용
 st.markdown(f"""
-    <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
-        <b>글씨 색상:</b> 
-        <span style="color:{txt_pair};">파랑(페어)</span> | 
-        <span style="color:{txt_suited};">초록(수딧)</span> | 
-        <span style="color:{txt_off};">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
-        <b>배경 색상:</b> 
-        <span class="tier-badge tier-badge-s">S급</span>
-        <span class="tier-badge tier-badge-a">A급</span>
-        <span class="tier-badge tier-badge-b">B급</span>
-        <span class="tier-badge tier-badge-c">C급</span>
-        <span class="tier-badge tier-badge-d">D급</span>
-    </div>
+    <style>
+    .stApp {{ background-color: {app_bg} !important; color: {text_main} !important; }}
+    div[data-testid="stHorizontal"] > div {{ padding: 0px 1px !important; }}
+    .stButton button {{
+        width: 100% !important; padding: 3px 0px !important; font-size: 0.82rem !important; min-height: 36px !important; border-radius: 6px !important;
+    }}
+    {" ".join(dynamic_button_styles)}
+    .tier-badge {{ display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; margin: 0 2px; }}
+    .tier-badge-s {{ background-color: {bg_s} !important; color: {badge_txt} !important; }}
+    .tier-badge-a {{ background-color: {bg_a} !important; color: {badge_txt} !important; }}
+    .tier-badge-b {{ background-color: {bg_b} !important; color: {badge_txt} !important; }}
+    .tier-badge-c {{ background-color: {bg_c} !important; color: {badge_txt} !important; }}
+    .tier-badge-d {{ background-color: {bg_d} !important; color: {badge_txt} !important; border: 1px solid {border_col} !important; }}
+
+    .card-badge {{ display: inline-block; padding: 4px 10px; font-size: 1.1rem; font-weight: bold; border-radius: 6px; margin: 2px; }}
+    .suit-s, .suit-c {{ background-color: #1e293b; color: #ffffff; border: 1px solid #475569; }}
+    .suit-h, .suit-d {{ background-color: #450a0a; color: #f87171; border: 1px solid #991b1b; }}
+    
+    .action-card {{ background-color: {card_bg}; border-radius: 8px; padding: 15px; border: 1px solid {border_col}; text-align: center; margin-top: 10px; }}
+    .action-title {{ font-size: 1.5rem; font-weight: bold; }}
+    .action-fold {{ color: #f87171; }}
+    .action-check {{ color: #38bdf8; }}
+    .action-call {{ color: #facc15; }}
+    .action-raise {{ color: #4ade80; }}
+    .action-allin {{ color: #fb923c; }}
+    </style>
 """, unsafe_allow_html=True)
 
-# 13x13 매트릭스 그리드
-matrix_cols = st.columns([0.6] + [1]*13)
-matrix_cols[0].write("")
-for j, r in enumerate(RANKS):
-    matrix_cols[j+1].markdown(f"**{r}**")
-    
-for i, r1 in enumerate(RANKS):
-    m_row = st.columns([0.6] + [1]*13)
-    m_row[0].markdown(f"**{r1}**")
-    for j, r2 in enumerate(RANKS):
-        ht = hand_type(r1, r2)
-        if m_row[j+1].button(ht, key=f"mat_{r1}_{r2}", use_container_width=True):
-            if r1 == r2:
-                st.session_state.hero_card1 = f"{r1}s"
-                st.session_state.hero_card2 = f"{r2}h"
-            elif RANKS.index(r1) < RANKS.index(r2):
-                st.session_state.hero_card1 = f"{r1}s"
-                st.session_state.hero_card2 = f"{r2}s"
-            else:
-                st.session_state.hero_card1 = f"{r1}s"
-                st.session_state.hero_card2 = f"{r2}h"
-            st.rerun()
+
+# ==========================================
+# 4. 탭 구성 (어드바이저 vs 모의게임)
+# ==========================================
+tab_advisor, tab_game = st.tabs(["📊 실시간 승률 & 수학적 어드바이저", "🎮 모의게임 (홀덤 연습)"])
 
 
 # ==========================================
-# 6. 선택 핸드 및 원클릭 무늬 프리셋
+# [TAB 1] 실시간 승률 & 수학적 어드바이저 (기존 기능 유지)
 # ==========================================
-st.markdown("---")
-h1, h2 = st.session_state.hero_card1, st.session_state.hero_card2
-r1, r2 = h1[0], h2[0]
-s1, s2 = h1[1], h2[1]
-ht = hand_type(r1, r2)
+with tab_advisor:
+    st.title("♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
 
-hero_cards = [h1, h2]
-h_html = "".join([format_card_html(c) for c in hero_cards])
-
-st.markdown(f"### 📌 내 핸드: {h_html} `({ht})`", unsafe_allow_html=True)
-
-st.write("⚡ **무늬(Suit) 원클릭 변경:**")
-
-if r1 == r2:  # Pair
-    pair_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
-    p_cols = st.columns(6)
-    for idx, (p1, p2) in enumerate(pair_combos):
-        sm1, sm2 = get_suit_md(p1), get_suit_md(p2)
-        c1_md, c2_md = format_card_md(r1, p1), format_card_md(r2, p2)
-        btn_label = f"{sm1}{sm2} ({c1_md} {c2_md})"
-        if p_cols[idx].button(btn_label, key=f"quick_pair_{p1}_{p2}", use_container_width=True):
-            st.session_state.hero_card1 = f"{r1}{p1}"
-            st.session_state.hero_card2 = f"{r2}{p2}"
-            st.rerun()
-
-elif s1 == s2:  # Suited
-    s_cols = st.columns(4)
-    for idx, suit in enumerate(SUITS):
-        sm = get_suit_md(suit)
-        c1_md, c2_md = format_card_md(r1, suit), format_card_md(r2, suit)
-        btn_label = f"{sm}{sm} ({c1_md} {c2_md})"
-        if s_cols[idx].button(btn_label, key=f"quick_suited_{suit}", use_container_width=True):
-            st.session_state.hero_card1 = f"{r1}{suit}"
-            st.session_state.hero_card2 = f"{r2}{suit}"
-            st.rerun()
-
-else:  # Offsuit
-    off_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
-    o_cols = st.columns(6)
-    for idx, (p1, p2) in enumerate(off_combos):
-        sm1, sm2 = get_suit_md(p1), get_suit_md(p2)
-        c1_md, c2_md = format_card_md(r1, p1), format_card_md(r2, p2)
-        btn_label = f"{sm1}{sm2} ({c1_md} {c2_md})"
-        if o_cols[idx].button(btn_label, key=f"quick_off_{p1}_{p2}", use_container_width=True):
-            st.session_state.hero_card1 = f"{r1}{p1}"
-            st.session_state.hero_card2 = f"{r2}{p2}"
-            st.rerun()
-
-
-# ==========================================
-# 7. 원클릭 보드 선택 및 7포커 족보 자동 판정
-# ==========================================
-st.markdown("---")
-st.subheader("🃏 커뮤니티 보드 카드 선택 (플랍 · 턴 · 리버)")
-
-used_cards = set(hero_cards + st.session_state.board_cards)
-
-slot_names = ["플랍 1", "플랍 2", "플랍 3", "턴 (Turn)", "리버 (River)"]
-slot_cols = st.columns(5)
-
-for i in range(5):
-    with slot_cols[i]:
-        st.caption(f"**{slot_names[i]}**")
-        if i < len(st.session_state.board_cards):
-            card_code = st.session_state.board_cards[i]
-            st.markdown(format_card_html(card_code), unsafe_allow_html=True)
-            if st.button("❌ 삭제", key=f"remove_board_{i}", use_container_width=True):
-                st.session_state.board_cards.pop(i)
-                st.rerun()
-        else:
-            st.markdown("<div style='color:gray; padding:6px; font-size:0.85rem;'>[ 빈 슬롯 ]</div>", unsafe_allow_html=True)
-
-if st.session_state.board_cards:
-    if st.button("🗑️ 보드 카드 전체 초기화", key="reset_board_all"):
-        st.session_state.board_cards = []
-        st.rerun()
-
-st.markdown("<br>", unsafe_allow_html=True)
-st.write("👉 **원클릭 카드 피커 (선택된 카드는 자동 숨김):**")
-
-for s in SUITS:
-    suit_row = st.columns([0.8] + [1]*13)
-    suit_row[0].markdown(f"### {get_suit_md(s)}")
-    for j, r in enumerate(RANKS):
-        card_code = f"{r}{s}"
-        btn_label = format_card_md(r, s)
-        
-        is_used = card_code in used_cards
-        is_full = len(st.session_state.board_cards) >= 5
-        
-        if is_used:
-            suit_row[j+1].markdown("<div style='min-height:36px;'></div>", unsafe_allow_html=True)
-        else:
-            if suit_row[j+1].button(
-                btn_label,
-                key=f"pick_card_{card_code}",
-                disabled=is_full,
-                use_container_width=True
-            ):
-                if len(st.session_state.board_cards) < 5:
-                    st.session_state.board_cards.append(card_code)
-                    st.rerun()
-
-board_cards = st.session_state.board_cards
-b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 없음)</span>"
-st.markdown(f"**현재 확정 보드:** {b_html}", unsafe_allow_html=True)
-
-# 7포커 족보 자동 표기 배너 (5장 이상 조합 가능 시)
-if len(hero_cards + board_cards) >= 5:
-    best_korean_hand = get_best_korean_hand(hero_cards, board_cards)
     st.markdown(f"""
-        <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:8px; padding:12px 18px; margin-top:12px; text-align:center;">
-            <span style="color:{text_sub}; font-size:0.95rem; font-weight:bold;">🏆 현재 최고 5카드 족보 판정 (7포커 족보 기준):</span>
-            <span style="color:#f59e0b; font-size:1.3rem; font-weight:bold; margin-left:12px;">{best_korean_hand}</span>
+        <div style="font-size:0.85rem; margin-bottom:8px; color:{text_sub}; font-weight:bold;">
+            <b>글씨 색상:</b> <span style="color:{txt_pair};">파랑(페어)</span> | <span style="color:{txt_suited};">초록(수딧)</span> | <span style="color:{txt_off};">주황(오프수딧)</span> &nbsp;&nbsp;|&nbsp;&nbsp; 
+            <b>배경 색상:</b> <span class="tier-badge tier-badge-s">S급</span> <span class="tier-badge tier-badge-a">A급</span> <span class="tier-badge tier-badge-b">B급</span> <span class="tier-badge tier-badge-c">C급</span> <span class="tier-badge tier-badge-d">D급</span>
         </div>
     """, unsafe_allow_html=True)
 
-
-# ==========================================
-# 8. 팟 오즈 & 아웃츠 참조 수학 계산기
-# ==========================================
-st.markdown("---")
-st.subheader("📊 상대 베팅 크기 & 팟 오즈(Pot Odds) 원클릭 선택")
-st.caption("팟 사이즈를 계산할 시간이 없을 때 상대방이 베팅한 상대적 크기를 선택하세요.")
-
-preset_cols = st.columns(8)
-presets = [
-    ("25% 팟", 25.0),
-    ("33% 팟", 33.3),
-    ("50% 팟", 50.0),
-    ("66% 팟", 66.6),
-    ("75% 팟", 75.0),
-    ("100% (팟)", 100.0),
-    ("150% (오버)", 150.0),
-    ("200% (2배)", 200.0),
-]
-
-for idx, (label, val) in enumerate(presets):
-    if preset_cols[idx].button(
-        label,
-        key=f"preset_btn_{idx}",
-        use_container_width=True
-    ):
-        st.session_state.bet_ratio_pct = val
-        st.rerun()
-
-req_eq, pot_ratio_str, outs_req_flop, outs_turn = calculate_pot_odds_math(st.session_state.bet_ratio_pct)
-
-m_cols = st.columns(4)
-m_items = [
-    ("선택한 베팅 크기", f"팟의 {st.session_state.bet_ratio_pct:.0f}%"),
-    ("팟 오즈 비율 (Pot Odds)", pot_ratio_str),
-    ("콜에 필요한 최소 승률", f"{req_eq:.1f}%"),
-    ("필요 아웃츠 (Flop/Turn)", f"약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개")
-]
-
-for idx, (title, val_str) in enumerate(m_items):
-    m_cols[idx].markdown(f"""
-        <div style="background-color:{card_bg}; border:1px solid {border_col}; border-radius:8px; padding:12px; text-align:center;">
-            <div style="color:{text_sub}; font-size:0.85rem; font-weight:bold;">{title}</div>
-            <div style="color:{text_main}; font-size:1.35rem; font-weight:bold; margin-top:4px;">{val_str}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-with st.expander("📖 베팅 크기별 필요 승률 & 아웃츠(Outs) 가이드 참조표", expanded=False):
-    st.markdown("""
-    | Bet Size (% of Pot) | 필요 승률 (Equity to Call) | 필요 아웃츠 (Flop 기준) | 필요 아웃츠 (Turn 기준) |
-    | :---: | :---: | :---: | :---: |
-    | **25%** | **16%** | **4개** | **8개** |
-    | **33%** | **20%** | **5개** | **10개** |
-    | **50%** | **25%** | **6~7개** | **12~13개** |
-    | **66%** | **28%** | **7개** | **14개** |
-    | **75%** | **30%** | **7~8개** | **15개** |
-    | **100%** | **33%** | **8~9개** | **16~17개** |
-    | **150%** | **38%** | **9~10개** | **19개** |
-    | **200%** | **40%** | **10개** | **20개** |
-    """)
-
-
-# ==========================================
-# 9. 실시간 승률 분리 표기 (왼쪽: 내 승률 / 오른쪽: 콜 필요 승률(참고용))
-# ==========================================
-st.markdown("---")
-st.subheader("🚀 실시간 승률 및 수학적 진단 결과")
-
-invalid_board_count = len(board_cards) not in (0, 3, 4, 5)
-
-if invalid_board_count:
-    st.warning("⚠️ 보드 카드는 **0장(프리플랍)**, **3장(플랍)**, **4장(턴)**, **5장(리버)** 조합일 때 정확히 계산됩니다.")
-else:
-    try:
-        hero_treys = [Card.new(c) for c in hero_cards]
-        board_treys = [Card.new(c) for c in board_cards]
+    # 13x13 매트릭스 그리드
+    matrix_cols = st.columns([0.6] + [1]*13)
+    matrix_cols[0].write("")
+    for j, r in enumerate(RANKS): matrix_cols[j+1].markdown(f"**{r}**")
         
-        equity, win_rate, tie_rate, loss_rate = calculate_monte_carlo_equity(
-            hero_treys, board_treys, opponents_count, sim_iterations
-        )
+    for i, r1 in enumerate(RANKS):
+        m_row = st.columns([0.6] + [1]*13)
+        m_row[0].markdown(f"**{r1}**")
+        for j, r2 in enumerate(RANKS):
+            ht = hand_type(r1, r2)
+            if m_row[j+1].button(ht, key=f"mat_{r1}_{r2}", use_container_width=True):
+                if r1 == r2:
+                    st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}s", f"{r2}h"
+                elif RANKS.index(r1) < RANKS.index(r2):
+                    st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}s", f"{r2}s"
+                else:
+                    st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}s", f"{r2}h"
+                st.rerun()
 
-        eq_pct = equity * 100.0
-        ev_diff = eq_pct - req_eq
-        
-        # 순서 교체: 왼쪽(내 승률) | 오른쪽(콜 필요 승률 참고용)
-        col_hero_left, col_math_right = st.columns(2)
-        
-        with col_hero_left:
-            st.markdown(f"""
-                <div style="background-color:{card_bg}; border:2px solid #22c55e; border-radius:10px; padding:16px; text-align:center;">
-                    <div style="color:#4ade80; font-size:1.05rem; font-weight:bold;">🎲 내 승률 (모든 경우 반영)</div>
-                    <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{eq_pct:.1f}%</div>
-                    <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
-                        승리: <b>{win_rate*100:.1f}%</b> | 비김: <b>{tie_rate*100:.1f}%</b> | 패배: <b>{loss_rate*100:.1f}%</b><br>
-                        기대값 차이 (EV Diff): <b>{ev_diff:+.1f}%p</b>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
+    st.markdown("---")
+    h1, h2 = st.session_state.hero_card1, st.session_state.hero_card2
+    r1, r2 = h1[0], h2[0]
+    s1, s2 = h1[1], h2[1]
+    ht = hand_type(r1, r2)
+    hero_cards = [h1, h2]
+    h_html = "".join([format_card_html(c) for c in hero_cards])
 
-        with col_math_right:
-            st.markdown(f"""
-                <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:10px; padding:16px; text-align:center;">
-                    <div style="color:#60a5fa; font-size:1.05rem; font-weight:bold;">📐 콜 필요 승률 (참고용)</div>
-                    <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{req_eq:.1f}%</div>
-                    <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
-                        팟 오즈 비율: <b>{pot_ratio_str}</b><br>
-                        필요 아웃츠 (Flop/Turn): <b>약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개</b>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(f"### 📌 내 핸드: {h_html} `({ht})`", unsafe_allow_html=True)
+    st.write("⚡ **무늬(Suit) 원클릭 변경:**")
 
-        if eq_pct >= req_eq + 15.0:
-            rec_action = "레이즈 / 올인 (Raise or All-in)"
-            action_class = "action-allin"
-            math_status = f"🔥 **압도적 +EV 상태 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-            advice_text = f"내 승률이 콜 필요 승률보다 **+{ev_diff:.1f}%p** 높습니다. 단순히 콜만 하는 것은 손해이며, 레이즈로 팟 크기를 대폭 키워야 하는 수학적 최고 가치 구간입니다."
-        elif eq_pct >= req_eq:
-            rec_action = "콜 추천 (Call)"
-            action_class = "action-call"
-            math_status = f"✅ **양의 기대값(+EV) 콜 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-            advice_text = f"내 승률이 팟 오즈가 요구하는 최소 승률을 **+{ev_diff:.1f}%p** 웃돌고 있습니다. 수학적으로 장기 반복 시 무조건 칩을 버는 구간이므로 **콜(Call)**이 적절합니다."
-        elif eq_pct >= req_eq - 5.0:
-            rec_action = "콜 또는 폴드 (Marginal Call / Fold)"
-            action_class = "action-check"
-            math_status = f"⚠️ **경계선 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-            advice_text = f"승률이 필요 승률에 비해서 **{abs(ev_diff):.1f}%p** 부족합니다. 상대의 베팅 성향이 블러핑이 많거나 후속 턴/리버에서 크게 먹을 수 있는 포지션이라면 콜을 고려할 수 있습니다."
-        else:
-            rec_action = "폴드 권장 (Fold)"
-            action_class = "action-fold"
-            math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
-            advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 이 상황에서 콜을 반복하면 지속적으로 칩이 감소하므로 **폴드(Fold)**가 수학적 정석입니다."
+    if r1 == r2:
+        pair_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
+        p_cols = st.columns(6)
+        for idx, (p1, p2) in enumerate(pair_combos):
+            btn_label = f"{get_suit_md(p1)}{get_suit_md(p2)} ({format_card_md(r1, p1)} {format_card_md(r2, p2)})"
+            if p_cols[idx].button(btn_label, key=f"quick_pair_{p1}_{p2}", use_container_width=True):
+                st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}{p1}", f"{r2}{p2}"
+                st.rerun()
+    elif s1 == s2:
+        s_cols = st.columns(4)
+        for idx, suit in enumerate(SUITS):
+            btn_label = f"{get_suit_md(suit)}{get_suit_md(suit)} ({format_card_md(r1, suit)} {format_card_md(r2, suit)})"
+            if s_cols[idx].button(btn_label, key=f"quick_suited_{suit}", use_container_width=True):
+                st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}{suit}", f"{r2}{suit}"
+                st.rerun()
+    else:
+        off_combos = [("s", "h"), ("s", "d"), ("s", "c"), ("h", "d"), ("h", "c"), ("d", "c")]
+        o_cols = st.columns(6)
+        for idx, (p1, p2) in enumerate(off_combos):
+            btn_label = f"{get_suit_md(p1)}{get_suit_md(p2)} ({format_card_md(r1, p1)} {format_card_md(r2, p2)})"
+            if o_cols[idx].button(btn_label, key=f"quick_off_{p1}_{p2}", use_container_width=True):
+                st.session_state.hero_card1, st.session_state.hero_card2 = f"{r1}{p1}", f"{r2}{p2}"
+                st.rerun()
 
+    # 원클릭 보드 선택
+    st.markdown("---")
+    st.subheader("🃏 커뮤니티 보드 카드 선택 (플랍 · 턴 · 리버)")
+    used_cards = set(hero_cards + st.session_state.board_cards)
+    slot_names = ["플랍 1", "플랍 2", "플랍 3", "턴 (Turn)", "리버 (River)"]
+    slot_cols = st.columns(5)
+
+    for i in range(5):
+        with slot_cols[i]:
+            st.caption(f"**{slot_names[i]}**")
+            if i < len(st.session_state.board_cards):
+                card_code = st.session_state.board_cards[i]
+                st.markdown(format_card_html(card_code), unsafe_allow_html=True)
+                if st.button("❌ 삭제", key=f"remove_board_{i}", use_container_width=True):
+                    st.session_state.board_cards.pop(i)
+                    st.rerun()
+            else:
+                st.markdown("<div style='color:gray; padding:6px; font-size:0.85rem;'>[ 빈 슬롯 ]</div>", unsafe_allow_html=True)
+
+    if st.session_state.board_cards:
+        if st.button("🗑️ 보드 카드 전체 초기화", key="reset_board_all"):
+            st.session_state.board_cards = []
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.write("👉 **원클릭 카드 피커 (선택된 카드는 자동 숨김):**")
+
+    for s in SUITS:
+        suit_row = st.columns([0.8] + [1]*13)
+        suit_row[0].markdown(f"### {get_suit_md(s)}")
+        for j, r in enumerate(RANKS):
+            card_code = f"{r}{s}"
+            btn_label = format_card_md(r, s)
+            if card_code in used_cards:
+                suit_row[j+1].markdown("<div style='min-height:36px;'></div>", unsafe_allow_html=True)
+            else:
+                if suit_row[j+1].button(btn_label, key=f"pick_card_{card_code}", disabled=len(st.session_state.board_cards)>=5, use_container_width=True):
+                    if len(st.session_state.board_cards) < 5:
+                        st.session_state.board_cards.append(card_code)
+                        st.rerun()
+
+    board_cards = st.session_state.board_cards
+    b_html = "".join([format_card_html(c) for c in board_cards]) if board_cards else "<span style='color:gray;'>프리플랍 (보드 없음)</span>"
+    st.markdown(f"**현재 확정 보드:** {b_html}", unsafe_allow_html=True)
+
+    if len(hero_cards + board_cards) >= 5:
+        best_korean_hand = get_best_korean_hand(hero_cards, board_cards)
         st.markdown(f"""
-            <div class="action-card">
-                <div style="color: {text_sub}; font-size: 0.95rem;">수학적 판정 결과</div>
-                <div class="action-title {action_class}">{rec_action}</div>
-                <div style="margin-top: 8px; font-size: 1.05rem;">{math_status}</div>
+            <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:8px; padding:12px 18px; margin-top:12px; text-align:center;">
+                <span style="color:{text_sub}; font-size:0.95rem; font-weight:bold;">🏆 현재 최고 5카드 족보 판정 (7포커 족보 기준):</span>
+                <span style="color:#f59e0b; font-size:1.3rem; font-weight:bold; margin-left:12px;">{best_korean_hand}</span>
             </div>
         """, unsafe_allow_html=True)
 
-        st.info(f"💡 **수학적 가치 진단 상세:**\n\n{advice_text}")
+    # 팟 오즈 계산
+    st.markdown("---")
+    st.subheader("📊 상대 베팅 크기 & 팟 오즈(Pot Odds) 원클릭 선택")
+    preset_cols = st.columns(8)
+    presets = [("25% 팟", 25.0), ("33% 팟", 33.3), ("50% 팟", 50.0), ("66% 팟", 66.6), ("75% 팟", 75.0), ("100% (팟)", 100.0), ("150% (오버)", 150.0), ("200% (2배)", 200.0)]
+    for idx, (label, val) in enumerate(presets):
+        if preset_cols[idx].button(label, key=f"preset_btn_{idx}", use_container_width=True):
+            st.session_state.bet_ratio_pct = val
+            st.rerun()
 
-        fig = go.Figure(data=[go.Pie(
-            labels=['승리', '비김', '패배'],
-            values=[win_rate*100, tie_rate*100, loss_rate*100],
-            hole=.4,
-            marker_colors=['#4ade80', '#facc15', '#f87171']
-        )])
-        fig.update_layout(
-            template="plotly_dark" if is_dark else "plotly_white",
-            height=250,
-            margin=dict(l=10, r=10, t=20, b=20),
-            showlegend=True
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    req_eq, pot_ratio_str, outs_req_flop, outs_turn = calculate_pot_odds_math(st.session_state.bet_ratio_pct)
 
-    except Exception as e:
-        st.error(f"계산 도중 오류가 발생했습니다: {str(e)}")
+    # 승률 계산 진단 결과
+    st.markdown("---")
+    st.subheader("🚀 실시간 승률 및 수학적 진단 결과")
+
+    if len(board_cards) not in (0, 3, 4, 5):
+        st.warning("⚠️ 보드 카드는 **0장(프리플랍)**, **3장(플랍)**, **4장(턴)**, **5장(리버)** 조합일 때 정확히 계산됩니다.")
+    else:
+        try:
+            hero_treys = [Card.new(c) for c in hero_cards]
+            board_treys = [Card.new(c) for c in board_cards]
+            equity, win_rate, tie_rate, loss_rate = calculate_monte_carlo_equity(hero_treys, board_treys, opponents_count, sim_iterations)
+            eq_pct = equity * 100.0
+            ev_diff = eq_pct - req_eq
+            
+            col_hero_left, col_math_right = st.columns(2)
+            with col_hero_left:
+                st.markdown(f"""
+                    <div style="background-color:{card_bg}; border:2px solid #22c55e; border-radius:10px; padding:16px; text-align:center;">
+                        <div style="color:#4ade80; font-size:1.05rem; font-weight:bold;">🎲 내 승률 (모든 경우 반영)</div>
+                        <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{eq_pct:.1f}%</div>
+                        <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
+                            승리: <b>{win_rate*100:.1f}%</b> | 비김: <b>{tie_rate*100:.1f}%</b> | 패배: <b>{loss_rate*100:.1f}%</b><br>
+                            기대값 차이 (EV Diff): <b>{ev_diff:+.1f}%p</b>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            with col_math_right:
+                st.markdown(f"""
+                    <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:10px; padding:16px; text-align:center;">
+                        <div style="color:#60a5fa; font-size:1.05rem; font-weight:bold;">📐 콜 필요 승률 (참고용)</div>
+                        <div style="font-size:2.4rem; font-weight:bold; color:{text_main}; margin:8px 0;">{req_eq:.1f}%</div>
+                        <div style="font-size:0.88rem; color:{text_sub}; line-height:1.5;">
+                            팟 오즈 비율: <b>{pot_ratio_str}</b><br>
+                            필요 아웃츠 (Flop/Turn): <b>약 {outs_req_flop:.0f}개 / {outs_turn:.0f}개</b>
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            if eq_pct >= req_eq + 15.0:
+                rec_action, action_class = "레이즈 / 올인 (Raise or All-in)", "action-allin"
+                math_status = f"🔥 **압도적 +EV 상태 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+                advice_text = f"내 승률이 콜 필요 승률보다 **+{ev_diff:.1f}%p** 높습니다. 단순히 콜만 하는 것은 손해이며, 레이즈로 팟 크기를 대폭 키워야 합니다."
+            elif eq_pct >= req_eq:
+                rec_action, action_class = "콜 추천 (Call)", "action-call"
+                math_status = f"✅ **양의 기대값(+EV) 콜 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+                advice_text = f"내 승률이 팟 오즈가 요구하는 최소 승률을 **+{ev_diff:.1f}%p** 웃돌고 있습니다. 콜(Call)이 수학적으로 무조건 유리합니다."
+            elif eq_pct >= req_eq - 5.0:
+                rec_action, action_class = "콜 또는 폴드 (Marginal Call / Fold)", "action-check"
+                math_status = f"⚠️ **경계선 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+                advice_text = f"승률이 필요 승률에 비해서 **{abs(ev_diff):.1f}%p** 부족합니다. 포지션이나 블러핑 가능성에 따라 콜을 선택할 수 있습니다."
+            else:
+                rec_action, action_class = "폴드 권장 (Fold)", "action-fold"
+                math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+                advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 폴드(Fold)가 상책입니다."
+
+            st.markdown(f"""
+                <div class="action-card">
+                    <div style="color: {text_sub}; font-size: 0.95rem;">수학적 판정 결과</div>
+                    <div class="action-title {action_class}">{rec_action}</div>
+                    <div style="margin-top: 8px; font-size: 1.05rem;">{math_status}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.info(f"💡 **수학적 가치 진단 상세:**\n\n{advice_text}")
+
+        except Exception as e:
+            st.error(f"계산 도중 오류가 발생했습니다: {str(e)}")
+
+
+# ==========================================
+# [TAB 2] 모의게임 (홀덤 연습 모드)
+# ==========================================
+with tab_game:
+    st.title("🎮 1:1 홀덤 모의게임 연습장")
+    st.caption("AI 상대와 실전과 동일한 대전을 즐기며 승률과 팟 오즈 판단을 실전 연습해보세요.")
+
+    # 헬퍼 함수: 새 판 시작
+    def start_mock_hand():
+        deck = [f"{r}{s}" for r in RANKS for s in SUITS]
+        random.shuffle(deck)
+        st.session_state.mg_hero_cards = [deck.pop(), deck.pop()]
+        st.session_state.mg_opp_cards = [deck.pop(), deck.pop()]
+        st.session_state.mg_board_cards = []
+        st.session_state.mg_deck = deck
+        
+        # 스몰/빅 블라인드 적용 (SB: 10, BB: 20)
+        st.session_state.mg_user_chips -= 10
+        st.session_state.mg_opp_chips -= 20
+        st.session_state.mg_user_bet = 10
+        st.session_state.mg_opp_bet = 20
+        st.session_state.mg_pot = 30
+        st.session_state.mg_stage = "PREFLOP"
+        st.session_state.mg_result_msg = ""
+        st.session_state.mg_last_action = "게임 시작 (내 SB 10 / AI BB 20)"
+
+    # 상단 메트릭 대시보드
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    m_col1.metric("👤 내 잔여 칩", f"{st.session_state.mg_user_chips} 칩")
+    m_col2.metric("💰 현재 팟 사이즈", f"{st.session_state.mg_pot} 칩")
+    m_col3.metric("🤖 AI 상대 칩", f"{st.session_state.mg_opp_chips} 칩")
+    m_col4.metric("📌 진행 단계", st.session_state.mg_stage)
+
+    st.markdown("---")
+
+    # 게임 진행 및 액션 화면
+    if st.session_state.mg_stage == "IDLE":
+        if st.session_state.mg_result_msg:
+            st.success(st.session_state.mg_result_msg) if "승리" in st.session_state.mg_result_msg or "획득" in st.session_state.mg_result_msg else st.warning(st.session_state.mg_result_msg)
+
+        if st.session_state.mg_user_chips < 10 or st.session_state.mg_opp_chips < 10:
+            st.error("⚠️ 한 쪽의 칩이 부족합니다! 아래 버튼을 눌러 칩을 리셋하세요.")
+            if st.button("🔄 칩 1,000개로 리셋 및 다시 시작", type="primary"):
+                st.session_state.mg_user_chips = 1000
+                st.session_state.mg_opp_chips = 1000
+                start_mock_hand()
+                st.rerun()
+        else:
+            if st.button("🃏 새 판 시작하기 (SB 10 / BB 20)", type="primary", use_container_width=True):
+                start_mock_hand()
+                st.rerun()
+
+    else: # PREFLOP, FLOP, TURN, RIVER
+        # AI 포커 테이블 레이아웃
+        st.markdown(f"### 🤖 상대방 (AI)")
+        if st.session_state.mg_stage == "SHOWDOWN":
+            opp_h = "".join([format_card_html(c) for c in st.session_state.mg_opp_cards])
+            opp_hand_rank = get_best_korean_hand(st.session_state.mg_opp_cards, st.session_state.mg_board_cards)
+            st.markdown(f"**상대 패:** {opp_h} `({opp_hand_rank})`", unsafe_allow_html=True)
+        else:
+            st.markdown("<span style='font-size:1.5rem;'>🂠 🂠</span> <span style='color:gray;'>(카드 숨김)</span>", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### 🃏 커뮤니티 보드")
+        if st.session_state.mg_board_cards:
+            b_html = "".join([format_card_html(c) for c in st.session_state.mg_board_cards])
+            st.markdown(b_html, unsafe_allow_html=True)
+        else:
+            st.markdown("<span style='color:gray;'>[ 프리플랍 진행 중 - 보드 카드 없음 ]</span>", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        hero_h = "".join([format_card_html(c) for c in st.session_state.mg_hero_cards])
+        hero_rank_str = ""
+        if len(st.session_state.mg_hero_cards + st.session_state.mg_board_cards) >= 5:
+            hero_rank_str = f" `({get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)})`"
+        st.markdown(f"### 👤 내 핸드: {hero_h}{hero_rank_str}", unsafe_allow_html=True)
+
+        st.info(f"💬 **최근 게임 상황:** {st.session_state.mg_last_action}")
+
+        # 사용자 액션 계산
+        call_needed = st.session_state.mg_opp_bet - st.session_state.mg_user_bet
+        
+        st.markdown("---")
+        st.write("⚡ **내 액션 선택:**")
+        act_col1, act_col2, act_col3, act_col4 = st.columns(4)
+
+        # 다음 스테이지 이동 헬퍼
+        def advance_stage():
+            st.session_state.mg_user_bet = 0
+            st.session_state.mg_opp_bet = 0
+            if st.session_state.mg_stage == "PREFLOP":
+                st.session_state.mg_board_cards = [st.session_state.mg_deck.pop() for _ in range(3)]
+                st.session_state.mg_stage = "FLOP"
+            elif st.session_state.mg_stage == "FLOP":
+                st.session_state.mg_board_cards.append(st.session_state.mg_deck.pop())
+                st.session_state.mg_stage = "TURN"
+            elif st.session_state.mg_stage == "TURN":
+                st.session_state.mg_board_cards.append(st.session_state.mg_deck.pop())
+                st.session_state.mg_stage = "RIVER"
+            elif st.session_state.mg_stage == "RIVER":
+                # 쇼다운 판정
+                st.session_state.mg_stage = "SHOWDOWN"
+                h_treys = [Card.new(c) for c in st.session_state.mg_hero_cards]
+                o_treys = [Card.new(c) for c in st.session_state.mg_opp_cards]
+                b_treys = [Card.new(c) for c in st.session_state.mg_board_cards]
+                
+                h_score = EVALUATOR.evaluate(b_treys, h_treys)
+                o_score = EVALUATOR.evaluate(b_treys, o_treys)
+                
+                h_name = get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)
+                o_name = get_best_korean_hand(st.session_state.mg_opp_cards, st.session_state.mg_board_cards)
+                
+                if h_score < o_score:
+                    st.session_state.mg_user_chips += st.session_state.mg_pot
+                    st.session_state.mg_result_msg = f"🎉 **쇼다운 승리!** 내 패: {h_name} vs 상대 패: {o_name} — **+{st.session_state.mg_pot} 칩** 획득!"
+                elif h_score > o_score:
+                    st.session_state.mg_opp_chips += st.session_state.mg_pot
+                    st.session_state.mg_result_msg = f"😭 **쇼다운 패배!** 내 패: {h_name} vs 상대 패: {o_name} — 상대방이 {st.session_state.mg_pot} 칩 획득"
+                else:
+                    st.session_state.mg_user_chips += st.session_state.mg_pot // 2
+                    st.session_state.mg_opp_chips += st.session_state.mg_pot // 2
+                    st.session_state.mg_result_msg = f"🤝 **비김 (Split)!** 내 패: {h_name} vs 상대 패: {o_name} — 팟 반씩 분할"
+                st.session_state.mg_stage = "IDLE"
+
+        # AI 의사결정 헬퍼
+        def ai_turn():
+            # simple AI logic
+            ai_rand = random.random()
+            if call_needed > 0:
+                if ai_rand < 0.7: # 70% 콜
+                    st.session_state.mg_opp_chips -= call_needed
+                    st.session_state.mg_pot += call_needed
+                    st.session_state.mg_opp_bet += call_needed
+                    st.session_state.mg_last_action = f"AI가 {call_needed} 칩 콜(Call)을 했습니다."
+                    advance_stage()
+                else: # 30% 폴드
+                    st.session_state.mg_user_chips += st.session_state.mg_pot
+                    st.session_state.mg_result_msg = f"🎉 상대방(AI)이 기권(Fold)하여 **+{st.session_state.mg_pot} 칩**을 획득했습니다!"
+                    st.session_state.mg_stage = "IDLE"
+            else:
+                if ai_rand < 0.6: # 체크
+                    st.session_state.mg_last_action = "상대방(AI)이 체크(Check)했습니다."
+                    advance_stage()
+                else: # 30 베팅
+                    bet_amt = min(30, st.session_state.mg_opp_chips)
+                    st.session_state.mg_opp_chips -= bet_amt
+                    st.session_state.mg_pot += bet_amt
+                    st.session_state.mg_opp_bet += bet_amt
+                    st.session_state.mg_last_action = f"상대방(AI)이 {bet_amt} 칩 베팅/레이즈를 했습니다."
+
+        # 버튼 1: CHECK / CALL
+        if call_needed == 0:
+            if act_col1.button("✅ 체크 (Check)", use_container_width=True):
+                st.session_state.mg_last_action = "내가 체크(Check)했습니다."
+                advance_stage()
+                st.rerun()
+        else:
+            if act_col1.button(f"📞 콜 ({call_needed} 칩)", use_container_width=True):
+                actual_call = min(call_needed, st.session_state.mg_user_chips)
+                st.session_state.mg_user_chips -= actual_call
+                st.session_state.mg_pot += actual_call
+                st.session_state.mg_user_bet += actual_call
+                st.session_state.mg_last_action = f"내가 {actual_call} 칩 콜(Call)했습니다."
+                advance_stage()
+                st.rerun()
+
+        # 버튼 2 & 3: RAISE
+        if act_col2.button("🔺 레이즈 (+30)", use_container_width=True):
+            r_amt = call_needed + 30
+            actual_r = min(r_amt, st.session_state.mg_user_chips)
+            st.session_state.mg_user_chips -= actual_r
+            st.session_state.mg_pot += actual_r
+            st.session_state.mg_user_bet += actual_r
+            st.session_state.mg_last_action = f"내가 {actual_r} 칩으로 레이즈했습니다."
+            ai_turn()
+            st.rerun()
+
+        if act_col3.button("🔥 올인 (All-In)", use_container_width=True):
+            allin_amt = st.session_state.mg_user_chips
+            st.session_state.mg_pot += allin_amt
+            st.session_state.mg_user_bet += allin_amt
+            st.session_state.mg_user_chips = 0
+            st.session_state.mg_last_action = "내가 올인(All-In)했습니다!"
+            ai_turn()
+            st.rerun()
+
+        # 버튼 4: FOLD
+        if act_col4.button("🏳️ 폴드 (Fold)", use_container_width=True):
+            st.session_state.mg_opp_chips += st.session_state.mg_pot
+            st.session_state.mg_result_msg = f"🏳️ 내 기권(Fold)으로 상대방이 {st.session_state.mg_pot} 칩을 가져갔습니다."
+            st.session_state.mg_stage = "IDLE"
+            st.rerun()
