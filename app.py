@@ -87,6 +87,8 @@ if "mg_pot_details_rows" not in st.session_state:
     st.session_state.mg_pot_details_rows = []
 if "mg_payouts" not in st.session_state:
     st.session_state.mg_payouts = []
+if "mg_all_contribs" not in st.session_state:
+    st.session_state.mg_all_contribs = []
 if "mg_player_histories" not in st.session_state:
     st.session_state.mg_player_histories = {}
 if "mg_showdown_done" not in st.session_state:
@@ -127,7 +129,7 @@ start_chips_setting = st.sidebar.slider(
     "시작 칩 (Start Chips)",
     min_value=100,
     max_value=10000,
-    value=400,
+    value=2000,
     step=100
 )
 
@@ -162,9 +164,9 @@ with st.sidebar.expander("📖 서비스 사용 설명서", expanded=True):
     3. '내 승률'과 '콜 필요 승률'을 실시간 비교하여 +EV 의사결정을 내립니다.
 
     **🎮 1:N 토너먼트 모의게임 탭**
-    1. **탈락자 자동 스킵 및 2인 남을 시 정통 헤즈업(Heads-Up) 블라인드 규칙**이 적용됩니다.
-    2. **올인(ALL IN) 상태**는 베팅액 옆에 명확히 표기됩니다.
-    3. 메인 팟 및 사이드 팟 분배 시 **상한선, 참여 자격자, 승자 및 족보**가 상세 표로 출력됩니다.
+    1. **올인 시 수동 오픈**: 올인 상태가 되어도 카드 한 장씩 수동 오픈하여 손끝 쫄깃함을 유지합니다.
+    2. **베팅액 명확화**: 현재 라운드 베팅액과 이번 핸드 누적 베팅액이 완벽히 구분되어 표기됩니다.
+    3. **상세한 손익 리포트**: 최종 수령 및 손익 차액을 계산해 보여줍니다.
     """)
 
 
@@ -737,6 +739,7 @@ with tab_game:
         st.session_state.mg_result_msg = ""
         st.session_state.mg_pot_details_rows = []
         st.session_state.mg_payouts = []
+        st.session_state.mg_all_contribs = []
         st.session_state.mg_dealer_pos = 0
         st.session_state.mg_showdown_done = False
         st.session_state.mg_user_total_contrib = 0
@@ -761,6 +764,7 @@ with tab_game:
             st.session_state.mg_opp_total_contribs[i] if i < len(st.session_state.mg_opp_total_contribs) else 0 
             for i in range(opponents_count)
         ]
+        st.session_state.mg_all_contribs = all_contribs
         all_folded = [is_player_folded(i) for i in range(total_players)]
         
         scores = {}
@@ -848,18 +852,25 @@ with tab_game:
 
         st.session_state.mg_active_turn = next_start_pos
 
+        # 더 이상 추가 베팅이 불가능한지 검사 (올인 상황)
+        bettable = [i for i in range(total_players) if not is_player_eliminated(i) and not is_player_folded(i) and get_player_chips(i) > 0]
+        no_more_betting = (len(bettable) <= 1)
+
         if st.session_state.mg_stage == "PREFLOP":
             st.session_state.mg_board_cards = [st.session_state.mg_deck.pop() for _ in range(3)]
             st.session_state.mg_stage = "FLOP"
-            run_poker_turn_engine()
+            if not no_more_betting:
+                run_poker_turn_engine()
         elif st.session_state.mg_stage == "FLOP":
             st.session_state.mg_board_cards.append(st.session_state.mg_deck.pop())
             st.session_state.mg_stage = "TURN"
-            run_poker_turn_engine()
+            if not no_more_betting:
+                run_poker_turn_engine()
         elif st.session_state.mg_stage == "TURN":
             st.session_state.mg_board_cards.append(st.session_state.mg_deck.pop())
             st.session_state.mg_stage = "RIVER"
-            run_poker_turn_engine()
+            if not no_more_betting:
+                run_poker_turn_engine()
         elif st.session_state.mg_stage == "RIVER":
             resolve_showdown_with_side_pots()
 
@@ -879,7 +890,16 @@ with tab_game:
 
             # 최후의 1인만 남고 모두 폴드한 경우
             if (active_opps + (1 if hero_act else 0)) <= 1:
+                all_contribs = [st.session_state.mg_user_total_contrib] + [
+                    st.session_state.mg_opp_total_contribs[i] if i < len(st.session_state.mg_opp_total_contribs) else 0 
+                    for i in range(opponents_count)
+                ]
+                st.session_state.mg_all_contribs = all_contribs
+                payouts = [0] * total_players
+
                 if hero_act:
+                    payouts[0] = st.session_state.mg_pot
+                    st.session_state.mg_payouts = payouts
                     st.session_state.mg_user_chips += st.session_state.mg_pot
                     st.session_state.mg_result_msg = f"🎉 모든 상대가 기권하여 **Hero**가 팟 **+{st.session_state.mg_pot} 칩**을 획득했습니다!"
                     st.session_state.mg_pot_details_rows = []
@@ -888,6 +908,8 @@ with tab_game:
                         (i for i in range(opponents_count) if not is_player_eliminated(i + 1) and not is_player_folded(i + 1)), 
                         0
                     )
+                    payouts[win_ai + 1] = st.session_state.mg_pot
+                    st.session_state.mg_payouts = payouts
                     if win_ai < len(st.session_state.mg_opp_chips):
                         st.session_state.mg_opp_chips[win_ai] += st.session_state.mg_pot
                     st.session_state.mg_result_msg = f"😭 모든 플레이어가 기권하여 **AI {win_ai+1}**가 팟 **+{st.session_state.mg_pot} 칩**을 획득했습니다!"
@@ -1072,6 +1094,7 @@ with tab_game:
         st.session_state.mg_result_msg = ""
         st.session_state.mg_pot_details_rows = []
         st.session_state.mg_payouts = []
+        st.session_state.mg_all_contribs = []
         st.session_state.mg_acted_players = []
         st.session_state.mg_active_turn = utg_pos
 
@@ -1118,7 +1141,7 @@ with tab_game:
         else:
             st.info(st.session_state.mg_result_msg)
 
-    # [개선] 더욱 상세해진 메인/사이드 팟 분배표
+    # 사이드 팟 분배 상세 표
     if st.session_state.get("mg_pot_details_rows"):
         st.markdown("#### 📊 메인 팟 / 사이드 팟 분배 상세")
         
@@ -1128,16 +1151,25 @@ with tab_game:
             table_md += f"| **{row['label']}** | **{row['pot_amt']} 칩** | 인당 최대 {row['cap_amt']} 칩 | {row['eligible']} | **{row['winners']}** | {row['hands']} |\n"
         
         st.markdown(table_md)
-        
-        payouts = st.session_state.get("mg_payouts", [])
-        win_summaries = []
-        for p_i, amt in enumerate(payouts):
-            if amt > 0:
-                p_name = get_player_name(p_i)
-                win_summaries.append(f"**{p_name}** (+{amt} 칩)")
-        
-        if win_summaries:
-            st.info("💡 **최종 칩 수령 요약:** " + " | ".join(win_summaries))
+
+    # 최종 칩 수령 및 베팅금 대비 순이익 요약
+    payouts = st.session_state.get("mg_payouts", [])
+    contribs = st.session_state.get("mg_all_contribs", [])
+    win_summaries = []
+
+    for p_i, amt in enumerate(payouts):
+        if amt > 0:
+            p_name = get_player_name(p_i)
+            c_amt = contribs[p_i] if p_i < len(contribs) else 0
+            net_profit = amt - c_amt
+            sign = "+" if net_profit >= 0 else ""
+            win_summaries.append(
+                f"**{p_name}** (총 베팅: **{c_amt} 칩** ➔ 수령: **{amt} 칩** | 순이익: **{sign}{net_profit} 칩**)"
+            )
+
+    if win_summaries:
+        summary_lines = "\n\n".join([f"• {item}" for item in win_summaries])
+        st.info(f"💡 **최종 칩 수령 및 손익 차액 요약:**\n\n{summary_lines}")
 
     if st.session_state.mg_user_chips <= 0 and not st.session_state.mg_user_eliminated and st.session_state.mg_stage == "IDLE":
         if st.session_state.mg_user_rebuys > 0:
@@ -1171,14 +1203,21 @@ with tab_game:
         with opp_cols[idx]:
             chip_val = st.session_state.mg_opp_chips[idx] if idx < len(st.session_state.mg_opp_chips) else start_chips_setting
             bet_val = st.session_state.mg_opp_bets[idx] if idx < len(st.session_state.mg_opp_bets) else 0
+            total_contrib_val = st.session_state.mg_opp_total_contribs[idx] if idx < len(st.session_state.mg_opp_total_contribs) else 0
             rebuy_left = st.session_state.mg_opp_rebuys[idx] if idx < len(st.session_state.mg_opp_rebuys) else rebuy_setting
             is_elim = is_player_eliminated(p_idx)
             is_folded = is_player_folded(p_idx)
             
-            # [개선] ALL IN 표시 추가
             allin_tag = " <span style='color:#ef4444; font-weight:bold;'>(🔥 ALL IN)</span>" if (chip_val == 0 and not is_elim and not is_folded) else ""
             
-            st.markdown(f"**AI {idx+1}**{pos_tag}<br><small style='color:#60a5fa;'><b>칩: {chip_val}</b> (리바이: {rebuy_left}/{rebuy_setting})<br><b>베팅액: {bet_val}</b>{allin_tag}</small>", unsafe_allow_html=True)
+            st.markdown(f"""
+                **AI {idx+1}**{pos_tag}<br>
+                <small style='color:#60a5fa;'>
+                    <b>칩: {chip_val}</b> (리바이: {rebuy_left}/{rebuy_setting})<br>
+                    <b>라운드 베팅액: {bet_val}</b><br>
+                    <b>핸드 누적 베팅액: {total_contrib_val}</b>{allin_tag}
+                </small>
+            """, unsafe_allow_html=True)
             
             if is_elim:
                 st.markdown("<span style='color:gray;'>💀 탈락 (Out)</span>", unsafe_allow_html=True)
@@ -1222,13 +1261,19 @@ with tab_game:
         hero_h = "".join([format_card_html(c) for c in st.session_state.mg_hero_cards]) if st.session_state.mg_hero_cards else "<span style='color:gray;'>[ 카드 없음 ]</span>"
         hero_rank_str = f" `({get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)})`" if len(st.session_state.mg_hero_cards + st.session_state.mg_board_cards) >= 5 else ""
     
-    # [개선] Hero ALL IN 표시
     hero_allin_tag = " <span style='color:#ef4444; font-weight:bold;'>(🔥 ALL IN)</span>" if (st.session_state.mg_user_chips == 0 and not st.session_state.mg_user_eliminated and not st.session_state.mg_user_folded) else ""
 
     hero_col1, hero_col2 = st.columns([2, 1])
     with hero_col1:
         st.markdown(f"### 👤 내 핸드{hero_tag}: {hero_h}{hero_rank_str}", unsafe_allow_html=True)
-        st.caption(f"💰 내 보유 칩: **{st.session_state.mg_user_chips}** | 현재 라운드 내 베팅액: **{st.session_state.mg_user_bet}**{hero_allin_tag}")
+        st.markdown(f"""
+            <div style="font-size:0.92rem; color:{text_sub}; margin-top:2px;">
+                💰 내 보유 칩: <b>{st.session_state.mg_user_chips}</b> &nbsp;|&nbsp; 
+                현재 라운드 베팅액: <b>{st.session_state.mg_user_bet}</b> &nbsp;|&nbsp; 
+                이번 핸드 누적 베팅액: <b>{st.session_state.mg_user_total_contrib}</b>{hero_allin_tag}
+            </div>
+        """, unsafe_allow_html=True)
+
     with hero_col2:
         hero_logs = st.session_state.mg_player_histories.get("Hero", [])
         if hero_logs:
@@ -1237,7 +1282,7 @@ with tab_game:
         else:
             st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
 
-    # 3) 대기 모드
+    # 3) 대기 모드 및 액션 영역
     if st.session_state.mg_stage == "IDLE":
         st.markdown("---")
         if active_players_count == 1:
@@ -1315,7 +1360,13 @@ with tab_game:
             st.warning(commentary_msg)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        
+
+        # -----------------------------------------------------------------
+        # [핵심 보완] 올인 시 수동 오픈 진행 및 베팅 컨트롤부
+        # -----------------------------------------------------------------
+        bettable_players = [i for i in range(total_players) if not is_player_eliminated(i) and not is_player_folded(i) and get_player_chips(i) > 0]
+        no_more_betting = (len(bettable_players) <= 1)
+
         if st.session_state.mg_user_eliminated:
             st.info("👀 **관전 모드 진행 중입니다. AI 플레이어들의 승부가 진행됩니다.**")
             if st.button("⏩ 관전 진행 (AI 턴 진행)", type="primary", use_container_width=True):
@@ -1329,11 +1380,18 @@ with tab_game:
                 run_poker_turn_engine()
                 st.rerun()
 
-        elif st.session_state.mg_user_chips == 0:
-            st.warning("🔥 **올인(All-In) 상태입니다. 쇼다운까지 자동 진행됩니다.**")
-            if st.button("⏩ 쇼다운 진행하기", type="primary", use_container_width=True):
-                st.session_state.mg_active_turn = get_next_turn(st.session_state.mg_active_turn)
-                run_poker_turn_engine()
+        # [올인 수동 진행 처리] 추가 베팅이 더 이상 불가능한 모든 플레이어 올인 상황
+        elif no_more_betting:
+            st.warning("🔥 **올인(ALL IN) 승부 진행 중입니다! 아래 버튼을 클릭해 카드를 한 장씩 오픈하며 결과를 확인하세요.**")
+            stage_btn_map = {
+                "PREFLOP": "🃏 플랍(Flop) 3장 카드 오픈하기 ⏩",
+                "FLOP": "🃏 턴(Turn) 카드 오픈하기 ⏩",
+                "TURN": "🃏 리버(River) 카드 오픈하기 ⏩",
+                "RIVER": "🏆 최종 쇼다운 & 팟 정산 결과 확인하기 ⏩"
+            }
+            btn_label = stage_btn_map.get(st.session_state.mg_stage, "⏩ 다음 단계 진행")
+            if st.button(btn_label, type="primary", use_container_width=True):
+                advance_poker_street()
                 st.rerun()
 
         else:
