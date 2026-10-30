@@ -75,6 +75,8 @@ if "mg_result_msg" not in st.session_state:
     st.session_state.mg_result_msg = ""
 if "mg_player_histories" not in st.session_state:
     st.session_state.mg_player_histories = {}
+if "mg_showdown_done" not in st.session_state:
+    st.session_state.mg_showdown_done = False
 
 
 # ==========================================
@@ -101,7 +103,7 @@ TIER_C = {
 
 
 # ==========================================
-# 2. 사이드바: 통합 설정 (시작 칩 슬라이더 적용)
+# 2. 사이드바: 통합 설정 (시작 칩 & BB 설정 추가)
 # ==========================================
 st.sidebar.title("⚙️ 게임 설정 & UI 테마")
 
@@ -115,6 +117,16 @@ start_chips_setting = st.sidebar.slider(
     step=100
 )
 
+# [요청 반영] 빅 블라인드(BB) 금액 설정
+bb_setting = st.sidebar.slider(
+    "빅 블라인드 (BB) 금액",
+    min_value=10,
+    max_value=500,
+    value=20,
+    step=10
+)
+sb_setting = bb_setting // 2
+
 sim_iterations = st.sidebar.select_slider("승률 정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
 
 st.sidebar.markdown("---")
@@ -122,17 +134,17 @@ theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드
 is_dark = (theme_mode == "🌙 다크 모드")
 
 with st.sidebar.expander("📖 서비스 사용 설명서", expanded=True):
-    st.markdown("""
+    st.markdown(f"""
     **📊 실시간 승률 어드바이저 탭**
     1. 169 매트릭스에서 내 핸드와 무늬 조합을 고릅니다.
     2. 커뮤니티 보드(플랍/턴/리버) 카드를 선택합니다.
     3. '내 승률'과 '콜 필요 승률'을 실시간 비교하여 +EV 의사결정을 내립니다.
 
     **🎮 1:N 토너먼트 모의게임 탭**
-    1. **딜러(BTN), SB(10), BB(20)** 포지션이 매 판 순환 이동합니다.
-    2. 상대 AI들이 베팅 및 **적극적으로 레이즈(Raise)**하여 심리적 압박을 가합니다.
-    3. AI 카드 상자에 **남은 리바이 횟수(예: 3/3)**가 명시됩니다.
-    4. 핸드 종료 시 **누가 어떤 족보(예: [풀하우스])로 승리했는지** 정확히 표기됩니다.
+    1. **BB 설정값({bb_setting} 칩, SB {sb_setting} 칩)**이 매 판 포지션 회전에 맞춰 차감됩니다.
+    2. 상대가 레이즈하거나 내가 베팅하면 **'콜 필요 승률'이 오즈 수식에 맞춰 동적으로 실시간 변동**됩니다.
+    3. **체크(Check)**는 이번 라운드에 내야 할 추가 칩이 0일 때만 활성화되며, 상대가 레이즈하면 **콜/리레이즈**만 가능합니다.
+    4. 핸드가 끝나도 커뮤니티 보드와 승리자 카드가 **숫자+문양 색상**으로 화면에 유지됩니다.
     """)
 
 
@@ -589,6 +601,7 @@ with tab_game:
         st.session_state.mg_stage = "IDLE"
         st.session_state.mg_result_msg = ""
         st.session_state.mg_dealer_pos = 0
+        st.session_state.mg_showdown_done = False
         st.session_state.mg_player_histories = {"Hero": []}
         for i in range(opponents_count):
             st.session_state.mg_player_histories[f"AI {i+1}"] = []
@@ -620,6 +633,7 @@ with tab_game:
         st.session_state.mg_user_folded = st.session_state.mg_user_eliminated
         st.session_state.mg_board_cards = []
         st.session_state.mg_deck = deck
+        st.session_state.mg_showdown_done = False
         
         st.session_state.mg_player_histories = {"Hero": []}
         for i in range(opponents_count):
@@ -633,41 +647,41 @@ with tab_game:
         st.session_state.mg_user_bet = 0
         st.session_state.mg_opp_bets = [0] * opponents_count
 
-        # SB (10 칩) 차감
+        # SB (설정값/2) 차감
         if sb_pos == 0:
             if not st.session_state.mg_user_eliminated:
-                val = min(10, st.session_state.mg_user_chips)
+                val = min(sb_setting, st.session_state.mg_user_chips)
                 st.session_state.mg_user_chips -= val
                 st.session_state.mg_user_bet = val
                 st.session_state.mg_pot += val
-                add_player_action("Hero", f"Preflop: SB({val})")
+                add_player_action("Hero", f"Preflop: SB({val}) [총 {val}]")
         else:
             ai_idx = sb_pos - 1
             if not st.session_state.mg_opp_eliminated[ai_idx]:
-                val = min(10, st.session_state.mg_opp_chips[ai_idx])
+                val = min(sb_setting, st.session_state.mg_opp_chips[ai_idx])
                 st.session_state.mg_opp_chips[ai_idx] -= val
                 st.session_state.mg_opp_bets[ai_idx] = val
                 st.session_state.mg_pot += val
-                add_player_action(f"AI {ai_idx+1}", f"Preflop: SB({val})")
+                add_player_action(f"AI {ai_idx+1}", f"Preflop: SB({val}) [총 {val}]")
 
-        # BB (20 칩) 차감
+        # BB (설정값) 차감
         if bb_pos == 0:
             if not st.session_state.mg_user_eliminated:
-                val = min(20, st.session_state.mg_user_chips)
+                val = min(bb_setting, st.session_state.mg_user_chips)
                 st.session_state.mg_user_chips -= val
                 st.session_state.mg_user_bet = val
                 st.session_state.mg_pot += val
-                add_player_action("Hero", f"Preflop: BB({val})")
+                add_player_action("Hero", f"Preflop: BB({val}) [총 {val}]")
         else:
             ai_idx = bb_pos - 1
             if not st.session_state.mg_opp_eliminated[ai_idx]:
-                val = min(20, st.session_state.mg_opp_chips[ai_idx])
+                val = min(bb_setting, st.session_state.mg_opp_chips[ai_idx])
                 st.session_state.mg_opp_chips[ai_idx] -= val
                 st.session_state.mg_opp_bets[ai_idx] = val
                 st.session_state.mg_pot += val
-                add_player_action(f"AI {ai_idx+1}", f"Preflop: BB({val})")
+                add_player_action(f"AI {ai_idx+1}", f"Preflop: BB({val}) [총 {val}]")
 
-        st.session_state.mg_current_max_bet = 20
+        st.session_state.mg_current_max_bet = bb_setting
         st.session_state.mg_stage = "PREFLOP"
         st.session_state.mg_result_msg = ""
 
@@ -687,10 +701,10 @@ with tab_game:
 
     st.markdown("---")
 
-    # 핸드 결과 배너 카드 (승리 족보 명시)
+    # 핸드 결과 배너 카드
     if st.session_state.mg_result_msg:
         st.markdown("### 🏆 핸드 결과 안내")
-        if "Hero" in st.session_state.mg_result_msg or "승리" in st.session_state.mg_result_msg:
+        if "Hero" in st.session_state.mg_result_msg or "획득" in st.session_state.mg_result_msg:
             st.success(st.session_state.mg_result_msg)
         else:
             st.warning(st.session_state.mg_result_msg)
@@ -711,8 +725,81 @@ with tab_game:
             else:
                 st.error("😭 모든 Re-buy in(3회)을 소진하셨습니다. 토너먼트에서 탈락했습니다.")
 
-    # 대기 모드 (IDLE)
+    # 게임 진행 및 결과 공통 보드 표시
+    sb_pos, bb_pos = get_positions(st.session_state.mg_dealer_pos, total_players)
+
+    # 1) 상대 AI 현황 (결과 화면에서도 패/족보 유지)
+    st.markdown("### 🤖 상대 AI 플레이어 현황")
+    opp_cols = st.columns(min(opponents_count, 9))
+    
+    for idx in range(opponents_count):
+        p_idx = idx + 1
+        pos_tag = ""
+        if p_idx == st.session_state.mg_dealer_pos: pos_tag = " [BTN]"
+        elif p_idx == sb_pos: pos_tag = " [SB]"
+        elif p_idx == bb_pos: pos_tag = " [BB]"
+
+        with opp_cols[idx]:
+            chip_val = st.session_state.mg_opp_chips[idx]
+            bet_val = st.session_state.mg_opp_bets[idx]
+            rebuy_left = st.session_state.mg_opp_rebuys[idx]
+            
+            st.markdown(f"**AI {idx+1}**{pos_tag}<br><small style='color:#60a5fa;'><b>칩: {chip_val}</b> (리바이: {rebuy_left}/3)<br>베팅: {bet_val}</small>", unsafe_allow_html=True)
+            
+            if st.session_state.mg_opp_eliminated[idx]:
+                st.markdown("<span style='color:gray;'>💀 탈락 (Out)</span>", unsafe_allow_html=True)
+            elif st.session_state.mg_opp_folded[idx]:
+                st.markdown("<span style='color:red;'>🏳️ Fold</span>", unsafe_allow_html=True)
+            else:
+                # [요청 반영] 쇼다운이 완료되었거나 IDLE 단계이면 숫자와 문양이 함께 보이는 카드 형태로 공개
+                if st.session_state.mg_stage in ["SHOWDOWN", "IDLE"] and st.session_state.mg_showdown_done:
+                    opp_h = "".join([format_card_html(c) for c in st.session_state.mg_opp_cards_list[idx]])
+                    opp_rank = get_best_korean_hand(st.session_state.mg_opp_cards_list[idx], st.session_state.mg_board_cards)
+                    st.markdown(f"{opp_h}<br><small style='color:#f59e0b; font-weight:bold;'>{opp_rank}</small>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<span style='font-size:1.2rem;'>🂠 🂠</span>", unsafe_allow_html=True)
+
+            # 행동 이력 태그
+            ai_logs = st.session_state.mg_player_histories.get(f"AI {idx+1}", [])
+            if ai_logs:
+                badge_html = " ".join([f"<span class='action-badge'>{log}</span>" for log in ai_logs[-2:]])
+                st.markdown(f"<div class='player-action-box'>{badge_html}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 🃏 커뮤니티 보드")
+    if st.session_state.mg_board_cards:
+        st.markdown("".join([format_card_html(c) for c in st.session_state.mg_board_cards]), unsafe_allow_html=True)
+    else:
+        st.markdown("<span style='color:gray;'>[ 프리플랍 진행 중 - 커뮤니티 카드 없음 ]</span>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 2) 내(Hero) 현황
+    hero_tag = ""
+    if st.session_state.mg_dealer_pos == 0: hero_tag = " [BTN]"
+    elif sb_pos == 0: hero_tag = " [SB]"
+    elif bb_pos == 0: hero_tag = " [BB]"
+
+    hero_h = "".join([format_card_html(c) for c in st.session_state.mg_hero_cards]) if st.session_state.mg_hero_cards else "<span style='color:gray;'>[ 카드 없음 ]</span>"
+    hero_rank_str = f" `({get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)})`" if len(st.session_state.mg_hero_cards + st.session_state.mg_board_cards) >= 5 else ""
+    
+    hero_col1, hero_col2 = st.columns([2, 1])
+    with hero_col1:
+        st.markdown(f"### 👤 내 핸드{hero_tag}: {hero_h}{hero_rank_str}", unsafe_allow_html=True)
+        st.caption(f"💰 내 보유 칩: **{st.session_state.mg_user_chips}** | 현재 라운드 내 베팅액: **{st.session_state.mg_user_bet}**")
+    with hero_col2:
+        hero_logs = st.session_state.mg_player_histories.get("Hero", [])
+        if hero_logs:
+            h_badge_html = " ".join([f"<span class='action-badge'>{log}</span>" for log in hero_logs[-2:]])
+            st.markdown(f"<div class='player-action-box'><b>내 행동 이력:</b><br>{h_badge_html}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
+
+    # 3) 대기 모드 (IDLE) - 다음 핸드 버튼
     if st.session_state.mg_stage == "IDLE":
+        st.markdown("---")
         if active_players_count == 1:
             if not st.session_state.mg_user_eliminated:
                 st.balloons()
@@ -722,7 +809,7 @@ with tab_game:
         
         col_start1, col_start2 = st.columns([2, 1])
         with col_start1:
-            st.info(f"💡 설정: **상대 AI {opponents_count}명** | **시작 칩 {start_chips_setting}** | **리바이인 최대 3회**")
+            st.info(f"💡 설정: **상대 AI {opponents_count}명** | **시작 칩 {start_chips_setting}** | **BB {bb_setting} (SB {sb_setting})**")
         with col_start2:
             if st.button("🔄 전체 토너먼트 새로 시작", type="primary", use_container_width=True):
                 reset_entire_tournament()
@@ -734,80 +821,9 @@ with tab_game:
             st.rerun()
 
     else:
-        # 게임 진행 화면
-        sb_pos, bb_pos = get_positions(st.session_state.mg_dealer_pos, total_players)
-
-        # 1) 상대 AI 현황 (리바이 횟수 및 베팅 현황 표기)
-        st.markdown("### 🤖 상대 AI 플레이어 현황")
-        opp_cols = st.columns(min(opponents_count, 9))
-        
-        for idx in range(opponents_count):
-            p_idx = idx + 1
-            pos_tag = ""
-            if p_idx == st.session_state.mg_dealer_pos: pos_tag = " [BTN]"
-            elif p_idx == sb_pos: pos_tag = " [SB]"
-            elif p_idx == bb_pos: pos_tag = " [BB]"
-
-            with opp_cols[idx]:
-                chip_val = st.session_state.mg_opp_chips[idx]
-                bet_val = st.session_state.mg_opp_bets[idx]
-                rebuy_left = st.session_state.mg_opp_rebuys[idx]
-                
-                st.markdown(f"**AI {idx+1}**{pos_tag}<br><small style='color:#60a5fa;'><b>칩: {chip_val}</b> (리바이: {rebuy_left}/3)<br>베팅: {bet_val}</small>", unsafe_allow_html=True)
-                
-                if st.session_state.mg_opp_eliminated[idx]:
-                    st.markdown("<span style='color:gray;'>💀 탈락 (Out)</span>", unsafe_allow_html=True)
-                elif st.session_state.mg_opp_folded[idx]:
-                    st.markdown("<span style='color:red;'>🏳️ Fold</span>", unsafe_allow_html=True)
-                else:
-                    if st.session_state.mg_stage == "SHOWDOWN":
-                        opp_h = "".join([format_card_html(c) for c in st.session_state.mg_opp_cards_list[idx]])
-                        opp_rank = get_best_korean_hand(st.session_state.mg_opp_cards_list[idx], st.session_state.mg_board_cards)
-                        st.markdown(f"{opp_h}<br><small>{opp_rank}</small>", unsafe_allow_html=True)
-                    else:
-                        st.markdown("<span style='font-size:1.2rem;'>🂠 🂠</span>", unsafe_allow_html=True)
-
-                # 행동 이력 태그
-                ai_logs = st.session_state.mg_player_histories.get(f"AI {idx+1}", [])
-                if ai_logs:
-                    badge_html = " ".join([f"<span class='action-badge'>{log}</span>" for log in ai_logs[-2:]])
-                    st.markdown(f"<div class='player-action-box'>{badge_html}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### 🃏 커뮤니티 보드")
-        if st.session_state.mg_board_cards:
-            st.markdown("".join([format_card_html(c) for c in st.session_state.mg_board_cards]), unsafe_allow_html=True)
-        else:
-            st.markdown("<span style='color:gray;'>[ 프리플랍 진행 중 - 커뮤니티 카드 없음 ]</span>", unsafe_allow_html=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # 2) 내(Hero) 현황
-        hero_tag = ""
-        if st.session_state.mg_dealer_pos == 0: hero_tag = " [BTN]"
-        elif sb_pos == 0: hero_tag = " [SB]"
-        elif bb_pos == 0: hero_tag = " [BB]"
-
-        hero_h = "".join([format_card_html(c) for c in st.session_state.mg_hero_cards])
-        hero_rank_str = f" `({get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)})`" if len(st.session_state.mg_hero_cards + st.session_state.mg_board_cards) >= 5 else ""
-        
-        hero_col1, hero_col2 = st.columns([2, 1])
-        with hero_col1:
-            st.markdown(f"### 👤 내 핸드{hero_tag}: {hero_h}{hero_rank_str}", unsafe_allow_html=True)
-            st.caption(f"💰 내 보유 칩: **{st.session_state.mg_user_chips}** | 현재 라운드 베팅액: **{st.session_state.mg_user_bet}**")
-        with hero_col2:
-            hero_logs = st.session_state.mg_player_histories.get("Hero", [])
-            if hero_logs:
-                h_badge_html = " ".join([f"<span class='action-badge'>{log}</span>" for log in hero_logs[-2:]])
-                st.markdown(f"<div class='player-action-box'><b>내 행동 이력:</b><br>{h_badge_html}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
-
-        # 3) 실시간 승률 오버레이
+        # 4) 실시간 승률 및 동적 콜 필요 승률 (팟 오즈)
         st.markdown("---")
-        st.subheader("💡 내 실시간 승률 & 팟 오즈")
+        st.subheader("💡 내 실시간 승률 & 실시간 팟 오즈")
         
         live_active_opp = sum(1 for idx in range(opponents_count) if not st.session_state.mg_opp_folded[idx] and not st.session_state.mg_opp_eliminated[idx])
         call_needed = max(0, st.session_state.mg_current_max_bet - st.session_state.mg_user_bet)
@@ -821,24 +837,32 @@ with tab_game:
             except: live_eq = 0.0
         else: live_eq = 100.0
 
-        live_req_eq = (call_needed / (st.session_state.mg_pot + call_needed)) * 100.0 if call_needed > 0 else 0.0
+        # [요청 반영] 콜 필요 금액과 팟 크기에 따른 실시간 동적 콜 필요 승률 계산
+        if call_needed > 0:
+            live_req_eq = (call_needed / (st.session_state.mg_pot + call_needed)) * 100.0
+            ratio_val = round((st.session_state.mg_pot + call_needed) / call_needed, 1)
+            odds_str = f"팟 오즈 비율 {ratio_val} : 1"
+        else:
+            live_req_eq = 0.0
+            odds_str = "체크 가능 (필요 칩 0)"
 
         adv1, adv2 = st.columns(2)
         adv1.markdown(f"""
             <div style="background-color:{card_bg}; border:2px solid #22c55e; border-radius:8px; padding:12px; text-align:center;">
-                <div style="color:#4ade80; font-size:0.95rem; font-weight:bold;">🎲 내 실시간 승률 (생존 상대 {live_active_opp}명)</div>
+                <div style="color:#4ade80; font-size:0.95rem; font-weight:bold;">🎲 내 수학적 실시간 승률 (생존 상대 {live_active_opp}명)</div>
                 <div style="font-size:1.8rem; font-weight:bold; color:{text_main};">{live_eq:.1f}%</div>
             </div>
         """, unsafe_allow_html=True)
 
         adv2.markdown(f"""
             <div style="background-color:{card_bg}; border:2px solid #3b82f6; border-radius:8px; padding:12px; text-align:center;">
-                <div style="color:#60a5fa; font-size:0.95rem; font-weight:bold;">📐 콜 필요 승률 (필요 콜: {call_needed} 칩)</div>
+                <div style="color:#60a5fa; font-size:0.95rem; font-weight:bold;">📐 동적 콜 필요 승률 (콜 필요: {call_needed} 칩)</div>
                 <div style="font-size:1.8rem; font-weight:bold; color:{text_main};">{live_req_eq:.1f}%</div>
+                <div style="font-size:0.8rem; color:{text_sub};">{odds_str}</div>
             </div>
         """, unsafe_allow_html=True)
 
-        # AI 실시간 베팅 및 레이즈(Raise) 로직
+        # AI 실시간 베팅 및 레이즈(Raise) 시뮬레이션
         def ai_actions_sim():
             cur_stage_name = st.session_state.mg_stage
             target_bet = st.session_state.mg_current_max_bet
@@ -848,9 +872,9 @@ with tab_game:
                     ai_call_diff = target_bet - st.session_state.mg_opp_bets[idx]
                     rnd = random.random()
                     
-                    # AI 레이즈 판단 (25% 확률로 심리적 압박 레이즈)
-                    if rnd < 0.25 and st.session_state.mg_opp_chips[idx] > ai_call_diff + 20:
-                        raise_add = random.choice([30, 50, 80, 100])
+                    # AI 레이즈 판단 (20% 확률로 심리적 압박 레이즈)
+                    if rnd < 0.20 and st.session_state.mg_opp_chips[idx] > ai_call_diff + bb_setting:
+                        raise_add = random.choice([bb_setting, bb_setting * 2, bb_setting * 3])
                         total_raise = ai_call_diff + raise_add
                         actual_raise = min(total_raise, st.session_state.mg_opp_chips[idx])
                         
@@ -859,10 +883,10 @@ with tab_game:
                         st.session_state.mg_pot += actual_raise
                         st.session_state.mg_current_max_bet = max(st.session_state.mg_current_max_bet, st.session_state.mg_opp_bets[idx])
                         
-                        add_player_action(f"AI {idx+1}", f"{cur_stage_name}: Raise(+{actual_raise}) 🔺")
+                        add_player_action(f"AI {idx+1}", f"{cur_stage_name}: Raise(+{actual_raise}) [총 {st.session_state.mg_opp_bets[idx]}] 🔺")
                     
                     elif ai_call_diff > 0:
-                        if rnd < 0.40:  # 폴드 (15%)
+                        if rnd < 0.35:  # 폴드 (15%)
                             st.session_state.mg_opp_folded[idx] = True
                             add_player_action(f"AI {idx+1}", f"{cur_stage_name}: Fold 🏳️")
                         else:  # 콜(Call)
@@ -870,7 +894,7 @@ with tab_game:
                             st.session_state.mg_opp_chips[idx] -= actual_ai_call
                             st.session_state.mg_opp_bets[idx] += actual_ai_call
                             st.session_state.mg_pot += actual_ai_call
-                            add_player_action(f"AI {idx+1}", f"{cur_stage_name}: Call({actual_ai_call}) 📞")
+                            add_player_action(f"AI {idx+1}", f"{cur_stage_name}: Call({actual_ai_call}) [총 {st.session_state.mg_opp_bets[idx]}] 📞")
                     else:
                         add_player_action(f"AI {idx+1}", f"{cur_stage_name}: Check ✅")
 
@@ -898,17 +922,16 @@ with tab_game:
                 st.session_state.mg_stage = "RIVER"
             elif st.session_state.mg_stage == "RIVER":
                 st.session_state.mg_stage = "SHOWDOWN"
+                st.session_state.mg_showdown_done = True
                 b_treys = [Card.new(c) for c in st.session_state.mg_board_cards]
                 
                 players_eval = []
-                # 내(Hero) 손패 평가
                 if not st.session_state.mg_user_folded:
                     h_treys = [Card.new(c) for c in st.session_state.mg_hero_cards]
                     score = EVALUATOR.evaluate(b_treys, h_treys)
                     hand_desc = get_best_korean_hand(st.session_state.mg_hero_cards, st.session_state.mg_board_cards)
                     players_eval.append((score, "Hero", 0, hand_desc))
 
-                # 상대 AI 손패 평가
                 for idx in range(opponents_count):
                     if not st.session_state.mg_opp_folded[idx]:
                         o_treys = [Card.new(c) for c in st.session_state.mg_opp_cards_list[idx]]
@@ -916,7 +939,6 @@ with tab_game:
                         hand_desc = get_best_korean_hand(st.session_state.mg_opp_cards_list[idx], st.session_state.mg_board_cards)
                         players_eval.append((score, f"AI {idx+1}", idx + 1, hand_desc))
 
-                # 낮은 점수가 최고의 족보
                 players_eval.sort(key=lambda x: x[0])
                 win_score, win_name, win_idx, win_hand = players_eval[0]
 
@@ -945,59 +967,66 @@ with tab_game:
                 st.rerun()
 
         else:
-            st.write("⚡ **내 액션 선택 및 베팅액 조절:**")
+            st.write(f"⚡ **내 액션 선택 (현재 라운드 콜 필요액: {call_needed} 칩):**")
             cur_stg = st.session_state.mg_stage
             
-            min_raise_amt = call_needed + 10
+            min_raise_amt = call_needed + bb_setting
             max_raise_amt = st.session_state.mg_user_chips
             
-            act_col1, act_col2, act_col3 = st.columns([1, 2, 1])
+            act_col1, act_col2, act_col3 = st.columns([1.2, 2, 1])
 
+            # [요청 반영] 홀덤 베팅 규칙 (call_needed == 0 일때만 체크 가능)
             if call_needed == 0:
-                if act_col1.button("✅ 체크 (Check)", use_container_width=True):
-                    add_player_action("Hero", f"{cur_stg}: Check ✅")
+                if act_col1.button("✅ 체크 (지출 0 칩 | 라운드 총액: " + str(st.session_state.mg_user_bet) + " 칩)", use_container_width=True):
+                    add_player_action("Hero", f"{cur_stg}: Check ✅ [총 {st.session_state.mg_user_bet}]")
                     ai_actions_sim()
                     st.rerun()
             else:
-                if act_col1.button(f"📞 콜 ({call_needed} 칩)", use_container_width=True):
+                total_call_bet = st.session_state.mg_user_bet + min(call_needed, st.session_state.mg_user_chips)
+                if act_col1.button(f"📞 콜 (지출 {call_needed} 칩 | 라운드 총액: {total_call_bet} 칩)", use_container_width=True):
                     actual_call = min(call_needed, st.session_state.mg_user_chips)
                     st.session_state.mg_user_chips -= actual_call
                     st.session_state.mg_pot += actual_call
                     st.session_state.mg_user_bet += actual_call
-                    add_player_action("Hero", f"{cur_stg}: Call({actual_call}) 📞")
+                    add_player_action("Hero", f"{cur_stg}: Call({actual_call}) [총 {st.session_state.mg_user_bet}] 📞")
                     ai_actions_sim()
                     st.rerun()
 
+            # [요청 반영] 베팅액 조절 및 이번 액션 지출 칩 & 라운드 총액 명시
             with act_col2:
                 if min_raise_amt <= max_raise_amt:
                     custom_raise_val = st.number_input(
-                        f"🔺 레이즈 금액 입력 (최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩):",
+                        f"🔺 이번 턴 지출 금액 (최소 {min_raise_amt} ~ 최대 {max_raise_amt} 칩):",
                         min_value=int(min_raise_amt),
                         max_value=int(max_raise_amt),
                         value=int(min_raise_amt),
-                        step=10,
+                        step=int(bb_setting),
                         key="raise_num_input"
                     )
-                    if st.button(f"🔺 {custom_raise_val} 칩 레이즈 실행", use_container_width=True):
+                    total_raise_bet = st.session_state.mg_user_bet + custom_raise_val
+                    btn_raise_label = f"🔺 레이즈 실행 (이번 턴 {custom_raise_val} 칩 지출 | 라운드 총액: {total_raise_bet} 칩)"
+                    
+                    if st.button(btn_raise_label, use_container_width=True):
                         st.session_state.mg_user_chips -= custom_raise_val
                         st.session_state.mg_pot += custom_raise_val
                         st.session_state.mg_user_bet += custom_raise_val
                         st.session_state.mg_current_max_bet = st.session_state.mg_user_bet
-                        add_player_action("Hero", f"{cur_stg}: Raise({custom_raise_val}) 🔺")
+                        add_player_action("Hero", f"{cur_stg}: Raise(+{custom_raise_val}) [총 {st.session_state.mg_user_bet}] 🔺")
                         ai_actions_sim()
                         st.rerun()
                 else:
-                    if st.button("🔥 올인 (All-In)", use_container_width=True):
-                        allin_amt = st.session_state.mg_user_chips
+                    allin_amt = st.session_state.mg_user_chips
+                    total_allin_bet = st.session_state.mg_user_bet + allin_amt
+                    if st.button(f"🔥 올인 (이번 턴 {allin_amt} 칩 지출 | 라운드 총액: {total_allin_bet} 칩)", use_container_width=True):
                         st.session_state.mg_pot += allin_amt
                         st.session_state.mg_user_bet += allin_amt
                         st.session_state.mg_user_chips = 0
                         st.session_state.mg_current_max_bet = max(st.session_state.mg_current_max_bet, st.session_state.mg_user_bet)
-                        add_player_action("Hero", f"{cur_stg}: All-In 🔥")
+                        add_player_action("Hero", f"{cur_stg}: All-In({allin_amt}) [총 {st.session_state.mg_user_bet}] 🔥")
                         ai_actions_sim()
                         st.rerun()
 
-            if act_col3.button("🏳️ 폴드 (Fold)", use_container_width=True):
+            if act_col3.button("🏳️ 폴드 (기권 | 지출 0 칩)", use_container_width=True):
                 st.session_state.mg_user_folded = True
                 add_player_action("Hero", f"{cur_stg}: Fold 🏳️")
                 ai_actions_sim()
