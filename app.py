@@ -133,7 +133,7 @@ start_chips_setting = st.sidebar.slider(
     "시작 칩 (Start Chips)",
     min_value=100,
     max_value=10000,
-    value=2000 if is_mobile else 400,
+    value=400,
     step=100
 )
 
