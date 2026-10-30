@@ -61,7 +61,8 @@ TIER_C = {
 # ==========================================
 # 2. 사이드바: 옵션 슬라이더, 테마 선택 및 사용 설명서
 # ==========================================
-opponents_count = st.sidebar.slider("상대 플레이어 수", min_value=1, max_value=8, value=2)
+# 상대 플레이어 최대 9명 (나 포함 총 10명 플레이어 지원)
+opponents_count = st.sidebar.slider("상대 플레이어 수 (나 포함 최대 10명)", min_value=1, max_value=9, value=2)
 sim_iterations = st.sidebar.select_slider("정밀도 (시뮬레이션)", options=[1000, 2500, 5000], value=2500)
 
 st.sidebar.markdown("---")
@@ -837,22 +838,22 @@ else:
         if eq_pct >= req_eq + 15.0:
             rec_action = "레이즈 / 올인 (Raise or All-in)"
             action_class = "action-allin"
-            math_status = f"🔥 **압도적 +EV 상태 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            math_status = f"🔥 **압도적 +EV 상태 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
             advice_text = f"내 승률이 콜 필요 승률보다 **+{ev_diff:.1f}%p** 높습니다. 단순히 콜만 하는 것은 손해이며, 레이즈로 팟 크기를 대폭 키워야 하는 수학적 최고 가치 구간입니다."
         elif eq_pct >= req_eq:
             rec_action = "콜 추천 (Call)"
             action_class = "action-call"
-            math_status = f"✅ **양의 기대값(+EV) 콜 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            math_status = f"✅ **양의 기대값(+EV) 콜 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
             advice_text = f"내 승률이 팟 오즈가 요구하는 최소 승률을 **+{ev_diff:.1f}%p** 웃돌고 있습니다. 수학적으로 장기 반복 시 무조건 칩을 버는 구간이므로 **콜(Call)**이 적절합니다."
         elif eq_pct >= req_eq - 5.0:
             rec_action = "콜 또는 폴드 (Marginal Call / Fold)"
             action_class = "action-check"
-            math_status = f"⚠️ **경계선 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            math_status = f"⚠️ **경계선 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
             advice_text = f"승률이 필요 승률에 비해서 **{abs(ev_diff):.1f}%p** 부족합니다. 상대의 베팅 성향이 블러핑이 많거나 후속 턴/리버에서 크게 먹을 수 있는 포지션이라면 콜을 고려할 수 있습니다."
         else:
             rec_action = "폴드 권장 (Fold)"
             action_class = "action-fold"
-            math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
+            math_status = f"🛑 **음의 기대값(-EV) 손실 구간 (내 승률 {eq_pct:.1f}% vs 필요 승률 {req_eq:.1f}%)**"
             advice_text = f"현재 승률({eq_pct:.1f}%)로는 팟 오즈 필요 승률({req_eq:.1f}%)을 충족하지 못합니다 (**{ev_diff:.1f}%p 부족**). 이 상황에서 콜을 반복하면 지속적으로 칩이 감소하므로 **폴드(Fold)**가 수학적 정석입니다."
 
         st.markdown(f"""
