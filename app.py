@@ -660,8 +660,19 @@ def _render_multiplayer(room_code, my_token):
     in_active_hand = stage in ("PREFLOP", "FLOP", "TURN", "RIVER")
     my_turn = in_active_hand and (my_seat is not None) and (active == my_seat)
 
-    # 자동 새로고침: 내 차례가 아닐 때만 (내 차례엔 입력값 보존)
-    if not my_turn:
+    # 내가 "눌러야 하는" 버튼(능동 액션)이 있는 상태인지 판별.
+    # 이런 상태에서 자동 새로고침이 돌면 버튼 클릭이 새로고침 rerun과 경합해
+    # 유실되어(여러 번 눌러야 반영) 버린다. 따라서 능동 액션이 있으면 새로고침을 멈춘다.
+    my_can_rebuy = (
+        my_seat is not None and stage == "IDLE" and snap["winner_seat"] is None
+        and seats[my_seat]["chips"] <= 0 and not seats[my_seat]["eliminated"]
+        and seats[my_seat]["rebuys"] > 0
+    )
+    host_idle_control = is_host and stage == "IDLE"  # 방장: 다음 핸드/재시작 버튼
+    has_action = my_turn or my_can_rebuy or host_idle_control
+
+    # 자동 새로고침: 능동 액션이 없을 때만 (내 차례/리바이/방장 컨트롤 시엔 입력 보존·클릭 유실 방지)
+    if not has_action:
         try:
             st_autorefresh(interval=1500, limit=None, key=f"rf_{room_code}")
         except Exception:
@@ -717,7 +728,11 @@ def _render_multiplayer(room_code, my_token):
                         cardhtml = "<span style='color:gray;'>대기</span>"
                 elif mine or revealed:
                     cardhtml = "".join(format_card_html(c) for c in s["hole"])
-                    if revealed and len(s["hole"]) == 2 and len(snap["board"]) == 5:
+                    # 실시간 족보: 내 패는 보드 3장 이상(=총 5장)부터, 공개된 상대 패는 쇼다운(보드 5장)에서 표시
+                    show_rank = len(s["hole"]) == 2 and (
+                        (mine and len(snap["board"]) >= 3) or (revealed and len(snap["board"]) == 5)
+                    )
+                    if show_rank:
                         cardhtml += f" <small style='color:#f59e0b;'>{get_best_korean_hand(s['hole'], snap['board'])}</small>"
                 else:
                     cardhtml = f"<span style='font-size:{glyph_fs};'>🂠 🂠</span>"
@@ -728,10 +743,11 @@ def _render_multiplayer(room_code, my_token):
                 last_act = s.get('last_action', '')
                 # 모바일에서는 빈 액션 줄을 생략해 세로 공간 절약
                 last_act_html = f"<br><small style='color:{text_sub};'>{last_act}</small>" if (last_act or not is_mobile) else ""
+                rebuy_html = f" · <span style=\"color:{text_sub};\">리바이 {s['rebuys']}/{cfg['rebuys']}</span>"
                 st.markdown(f"""
                     <div class="mp-seat-box" style="border:2px solid {border}; border-radius:8px; padding:{box_pad}; background:{card_bg}; margin-bottom:3px; font-size:{box_fs}; line-height:1.25;">
                         <b style="font-size:{name_fs};">{namelabel}{pos_tag(i)}</b>{turn_mark}<br>
-                        <span style="color:#60a5fa;">칩 {s['chips']}</span> · <span style="color:{text_sub};">베팅 {s['bet']}/{s['contrib']}</span>{allin}<br>
+                        <span style="color:#60a5fa;">칩 {s['chips']}</span> · <span style="color:{text_sub};">베팅 {s['bet']}/{s['contrib']}</span>{rebuy_html}{allin}<br>
                         {cardhtml}{last_act_html}
                     </div>
                 """, unsafe_allow_html=True)
