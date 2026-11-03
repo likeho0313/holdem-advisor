@@ -150,33 +150,35 @@ def join_room(room, token, name):
     if existing is not None:
         room["seats"][existing]["name"] = name
         return existing
-    # 1) 빈 좌석 우선
-    for s in room["seats"]:
-        if s["kind"] == "EMPTY":
-            s.update({
-                "kind": "HUMAN",
-                "token": token,
-                "name": name,
-                "chips": room["config"]["start_chips"],
-                "rebuys": room["config"]["rebuys"],
-                "eliminated": False,
-                "folded": True,
-                "in_hand": False,
-                "sitting_out": (room["stage"] not in ("LOBBY", "IDLE", "SHOWDOWN")),
-                "hole": [], "bet": 0, "contrib": 0, "last_action": "",
-            })
-            _log(room, f"👋 {name} 님이 {s['idx']+1}번 좌석으로 입장했습니다.")
-            _bump(room)
-            return s["idx"]
-    # 2) 빈 좌석이 없으면 살아있는 AI 좌석 인계 (현재 스택/핸드 상태 승계)
-    for s in room["seats"]:
-        if s["kind"] == "AI" and not s["eliminated"]:
-            s["kind"] = "HUMAN"
-            s["token"] = token
-            s["name"] = name
-            _log(room, f"🙋 {name} 님이 {s['idx']+1}번 봇(AI) 좌석을 인계했습니다.")
-            _bump(room)
-            return s["idx"]
+    # 1) 빈 좌석 우선 — 무작위로 배정 (입장 순서와 좌석 번호가 고정되지 않도록)
+    empty_seats = [s for s in room["seats"] if s["kind"] == "EMPTY"]
+    if empty_seats:
+        s = random.choice(empty_seats)
+        s.update({
+            "kind": "HUMAN",
+            "token": token,
+            "name": name,
+            "chips": room["config"]["start_chips"],
+            "rebuys": room["config"]["rebuys"],
+            "eliminated": False,
+            "folded": True,
+            "in_hand": False,
+            "sitting_out": (room["stage"] not in ("LOBBY", "IDLE", "SHOWDOWN")),
+            "hole": [], "bet": 0, "contrib": 0, "last_action": "",
+        })
+        _log(room, f"👋 {name} 님이 {s['idx']+1}번 좌석으로 입장했습니다.")
+        _bump(room)
+        return s["idx"]
+    # 2) 빈 좌석이 없으면 살아있는 AI 좌석을 무작위로 인계 (현재 스택/핸드 상태 승계)
+    ai_seats = [s for s in room["seats"] if s["kind"] == "AI" and not s["eliminated"]]
+    if ai_seats:
+        s = random.choice(ai_seats)
+        s["kind"] = "HUMAN"
+        s["token"] = token
+        s["name"] = name
+        _log(room, f"🙋 {name} 님이 {s['idx']+1}번 봇(AI) 좌석을 인계했습니다.")
+        _bump(room)
+        return s["idx"]
     return None
 
 
@@ -291,7 +293,8 @@ def start_hand(room):
 
     # 딜러 버튼 회전
     if room["hand_no"] == 0:
-        room["dealer_seat"] = order[0]
+        # 첫 핸드의 딜러(=선·블라인드 순서 기준)를 무작위로 정해 턴 순서가 고정되지 않도록 한다.
+        room["dealer_seat"] = random.choice(order)
     else:
         if room["dealer_seat"] in order:
             di = order.index(room["dealer_seat"])
