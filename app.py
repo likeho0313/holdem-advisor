@@ -526,6 +526,21 @@ mobile_header_css = """
         padding: 4px !important;
         box-shadow: 0 4px 10px rgba(0,0,0,0.4) !important;
     }
+
+    /* 가로모드(세로 높이가 짧은 폰) 최적화: 여백/폰트를 줄여 한 화면에 더 많이 보이도록 */
+    @media (orientation: landscape) and (max-height: 600px) {
+        .main .block-container {
+            padding-top: 0.1rem !important;
+            padding-bottom: 0.1rem !important;
+        }
+        div[data-testid="stMetric"] { padding: 0px !important; }
+        div[data-testid="stMetricValue"] { font-size: 0.95rem !important; }
+        div[data-testid="stMetricLabel"] p { font-size: 0.62rem !important; }
+        div[data-testid="stMetricLabel"] { margin-bottom: 0px !important; }
+        .opp-card-box, .mp-seat-box { font-size: 0.6rem !important; padding: 2px 4px !important; }
+        .hero-board-box { padding: 2px 5px !important; }
+        .stButton button { min-height: 30px !important; }
+    }
 """ if is_mobile else ""
 
 st.markdown(f"""
@@ -676,6 +691,11 @@ def _render_multiplayer(room_code, my_token):
 
     occ = [s for s in seats if s["kind"] != "EMPTY"]
     per_row = 3 if is_mobile else (min(len(occ), 5) or 1)
+    # 모바일(특히 가로모드)에서는 여백/폰트/카드 글리프를 줄여 컴팩트하게 렌더
+    box_pad = "3px 5px" if is_mobile else "5px 7px"
+    box_fs = "0.64rem" if is_mobile else "0.85rem"
+    glyph_fs = "0.9rem" if is_mobile else "1.1rem"
+    name_fs = "0.7rem" if is_mobile else "0.9rem"
     for rs in range(0, len(occ), per_row):
         row = occ[rs:rs + per_row]
         cols = st.columns(len(row))
@@ -700,36 +720,52 @@ def _render_multiplayer(room_code, my_token):
                     if revealed and len(s["hole"]) == 2 and len(snap["board"]) == 5:
                         cardhtml += f" <small style='color:#f59e0b;'>{get_best_korean_hand(s['hole'], snap['board'])}</small>"
                 else:
-                    cardhtml = "<span style='font-size:1.1rem;'>🂠 🂠</span>"
+                    cardhtml = f"<span style='font-size:{glyph_fs};'>🂠 🂠</span>"
 
                 allin = " <b style='color:#ef4444;'>(ALL IN)</b>" if (s["in_hand"] and not s["folded"] and s["chips"] == 0 and not s["eliminated"]) else ""
                 namelabel = s["name"] + ("🤖" if s["kind"] == "AI" else "") + (" (나)" if mine else "")
+                turn_mark = " ⬅️턴" if turn_hi else ""
+                last_act = s.get('last_action', '')
+                # 모바일에서는 빈 액션 줄을 생략해 세로 공간 절약
+                last_act_html = f"<br><small style='color:{text_sub};'>{last_act}</small>" if (last_act or not is_mobile) else ""
                 st.markdown(f"""
-                    <div style="border:2px solid {border}; border-radius:8px; padding:5px 7px; background:{card_bg}; margin-bottom:3px;">
-                        <b>{namelabel}{pos_tag(i)}</b>{' ⬅️턴' if turn_hi else ''}<br>
+                    <div class="mp-seat-box" style="border:2px solid {border}; border-radius:8px; padding:{box_pad}; background:{card_bg}; margin-bottom:3px; font-size:{box_fs}; line-height:1.25;">
+                        <b style="font-size:{name_fs};">{namelabel}{pos_tag(i)}</b>{turn_mark}<br>
                         <span style="color:#60a5fa;">칩 {s['chips']}</span> · <span style="color:{text_sub};">베팅 {s['bet']}/{s['contrib']}</span>{allin}<br>
-                        {cardhtml}<br>
-                        <small style="color:{text_sub};">{s.get('last_action','')}</small>
+                        {cardhtml}{last_act_html}
                     </div>
                 """, unsafe_allow_html=True)
 
     board_h = "".join(format_card_html(c) for c in snap["board"]) if snap["board"] else "<span style='color:gray;'>[프리플랍]</span>"
-    st.markdown(f"### 🃏 커뮤니티 보드: {board_h}", unsafe_allow_html=True)
+    if is_mobile:
+        st.markdown(f"<div class='hero-board-box'><b style='font-size:0.8rem;'>🃏 커뮤니티 보드:</b> {board_h}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"### 🃏 커뮤니티 보드: {board_h}", unsafe_allow_html=True)
 
     # 쇼다운 / 결과
     res = snap.get("result")
     if stage == "IDLE" and res:
         if res["type"] == "showdown" and res["pot_rows"]:
-            tbl = "| 팟 | 금액 | 👥 자격자 | 🏆 승자 | 🃏 족보 |\n|:--|:--|:--|:--|:--|\n"
-            for pr in res["pot_rows"]:
-                elig = ", ".join(seats[e]["name"] for e in pr["eligible"])
-                wnames = ", ".join(f"{seats[w]['name']} (+{pr['split']})" for w in pr["winners"])
-                whands = " / ".join(
-                    get_best_korean_hand(seats[w]["hole"], snap["board"])
-                    for w in pr["winners"] if len(seats[w]["hole"]) == 2
-                )
-                tbl += f"| {pr['label']} | {pr['pot_amt']} | {elig} | {wnames} | {whands} |\n"
-            st.markdown(tbl)
+            if is_mobile:
+                # 가로모드에서 넓은 표가 넘치지 않도록 팟별 1줄 요약으로 표시
+                for pr in res["pot_rows"]:
+                    wnames = ", ".join(f"{seats[w]['name']}(+{pr['split']})" for w in pr["winners"])
+                    whands = " / ".join(
+                        get_best_korean_hand(seats[w]["hole"], snap["board"])
+                        for w in pr["winners"] if len(seats[w]["hole"]) == 2
+                    )
+                    st.caption(f"🏆 {pr['label']} {pr['pot_amt']} → {wnames} ({whands})")
+            else:
+                tbl = "| 팟 | 금액 | 👥 자격자 | 🏆 승자 | 🃏 족보 |\n|:--|:--|:--|:--|:--|\n"
+                for pr in res["pot_rows"]:
+                    elig = ", ".join(seats[e]["name"] for e in pr["eligible"])
+                    wnames = ", ".join(f"{seats[w]['name']} (+{pr['split']})" for w in pr["winners"])
+                    whands = " / ".join(
+                        get_best_korean_hand(seats[w]["hole"], snap["board"])
+                        for w in pr["winners"] if len(seats[w]["hole"]) == 2
+                    )
+                    tbl += f"| {pr['label']} | {pr['pot_amt']} | {elig} | {wnames} | {whands} |\n"
+                st.markdown(tbl)
         summ = []
         for i, amt in enumerate(res["payouts"]):
             if amt > 0:
