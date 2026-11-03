@@ -1,12 +1,17 @@
 import random
 import string
 import itertools
+import threading
+import uuid
+import copy
 from collections import Counter
 import streamlit as st
 from treys import Card, Deck, Evaluator
+from streamlit_autorefresh import st_autorefresh
+import poker_engine as PE
 
 # ==========================================
-# 0. 페이지 기본 설정 및 글로벌 룸 세션 관리
+# 0. 페이지 기본 설정 및 실시간 공유 상태
 # ==========================================
 st.set_page_config(
     page_title="텍사스 홀덤 실시간 승률 & 멀티 토너먼트 모의게임",
@@ -15,12 +20,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 서버 전체 사용자 간 방 공유를 위한 메모리 저장소 (프로세스 공유)
+# 한 서버 프로세스에 접속한 모든 사용자 세션이 공유하는 권위 상태 저장소.
+# rooms: {code: room_dict}, lock: 모든 상태 변경을 직렬화하는 전역 락.
 @st.cache_resource
-def get_global_rooms():
-    return {}
+def get_server():
+    return {"rooms": {}, "lock": threading.Lock()}
 
-GLOBAL_ROOMS = get_global_rooms()
+SERVER = get_server()
+ROOMS = SERVER["rooms"]
+LOCK = SERVER["lock"]
+
+# 이 브라우저 세션을 식별하는 고유 토큰 (좌석 소유자 판별에 사용)
+if "player_token" not in st.session_state:
+    st.session_state.player_token = uuid.uuid4().hex
+if "my_display_name" not in st.session_state:
+    st.session_state.my_display_name = "Player"
 
 RANKS = ["A", "K", "Q", "J", "T", "9", "8", "7", "6", "5", "4", "3", "2"]
 SUITS = ["s", "h", "d", "c"]
@@ -152,91 +166,98 @@ rebuy_slider = st.sidebar.slider("최대 리바이 가능 횟수", min_value=0, 
 bb_slider = st.sidebar.slider("빅 블라인드 (BB) 금액", min_value=10, max_value=500, value=20, step=10)
 sim_iterations = st.sidebar.select_slider("승률 정밀도", options=[1000, 2500, 5000], value=2500)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("🌐 멀티플레이 룸 매칭")
+# 솔로/어드바이저용 설정값 (멀티룸은 방장이 정한 방 설정을 따름)
+opponents_count = opponents_slider
+start_chips_setting = start_chips_slider
+rebuy_setting = rebuy_slider
+bb_setting = bb_slider
+sb_setting = bb_setting // 2
 
-room_action = st.sidebar.radio("멀티플레이 기능", ["솔로 플레이", "방 생성하기", "방 참가하기"])
+st.sidebar.markdown("---")
+st.sidebar.subheader("🌐 실시간 멀티플레이 룸")
+
+my_token = st.session_state.player_token
+my_name = st.sidebar.text_input("내 닉네임", value=st.session_state.my_display_name, max_chars=16)
+st.session_state.my_display_name = my_name or "Player"
+
+room_action = st.sidebar.radio("멀티플레이 기능", ["솔로 플레이 (vs AI)", "방 생성하기", "방 참가하기"])
 
 if room_action == "방 생성하기":
-    max_total_p = st.sidebar.number_input("최대 전체 플레이어 수", min_value=2, max_value=10, value=4)
-    human_p_cnt = st.sidebar.number_input("사람(인간) 플레이어 수", min_value=1, max_value=max_total_p, value=2)
-    ai_bot_cnt = max_total_p - human_p_cnt
-    st.sidebar.caption(f"🤖 자동 계산된 AI BOT 수: **{ai_bot_cnt}명**")
-
-    if st.sidebar.button("🎲 방 생성 & 입장코드 발급", use_container_width=True):
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        GLOBAL_ROOMS[code] = {
-            "max_players": int(max_total_p),
-            "human_target": int(human_p_cnt),
-            "ai_count": int(ai_bot_cnt),
-            "joined_humans": ["Player_1"],
-            "start_chips": int(start_chips_slider),
-            "rebuys": int(rebuy_slider),
-            "bb": int(bb_slider),
-        }
+    mp = st.sidebar.number_input("최대 전체 플레이어 수 (사람 + AI)", min_value=2, max_value=10, value=4)
+    st.sidebar.caption("비어 있는 좌석은 핸드 시작 시 AI로 자동 충원됩니다.")
+    if st.sidebar.button("🎲 방 생성 & 코드 발급", use_container_width=True):
+        with LOCK:
+            code = PE.gen_code()
+            while code in ROOMS:
+                code = PE.gen_code()
+            room = PE.new_room({
+                "code": code,
+                "max_players": int(mp),
+                "start_chips": int(start_chips_slider),
+                "rebuys": int(rebuy_slider),
+                "bb": int(bb_slider),
+            }, my_token, st.session_state.my_display_name)
+            ROOMS[code] = room
         st.session_state.current_room_code = code
-        st.session_state.my_player_name = "Player_1 (방장)"
-        st.sidebar.success(f"방이 생성되었습니다! 코드: **{code}**")
+        st.rerun()
 
 elif room_action == "방 참가하기":
     join_code_input = st.sidebar.text_input("입장 코드를 입력하세요", max_chars=6).strip().upper()
     if st.sidebar.button("🚪 방 입장하기", use_container_width=True):
-        if join_code_input in GLOBAL_ROOMS:
-            room = GLOBAL_ROOMS[join_code_input]
-            if len(room["joined_humans"]) < room["human_target"]:
-                p_id = f"Player_{len(room['joined_humans']) + 1}"
-                room["joined_humans"].append(p_id)
-                st.session_state.current_room_code = join_code_input
-                st.session_state.my_player_name = p_id
-                st.sidebar.success(f"방 [{join_code_input}]에 {p_id}로 입장했습니다!")
+        did_join = False
+        with LOCK:
+            room = ROOMS.get(join_code_input)
+            if room is None:
+                st.sidebar.error("존재하지 않거나 유효하지 않은 입장 코드입니다.")
             else:
-                st.sidebar.error("해당 방의 인원이 이미 가득 찼습니다.")
-        else:
-            st.sidebar.error("존재하지 않거나 유효하지 않은 입장 코드입니다.")
+                seat = PE.join_room(room, my_token, st.session_state.my_display_name)
+                if seat is None:
+                    st.sidebar.error("해당 방의 좌석이 모두 찼습니다.")
+                else:
+                    st.session_state.current_room_code = join_code_input
+                    did_join = True
+        if did_join:
+            st.rerun()
 
-# 현재 참가 중인 방 정보 표시 및 나가기
+# 현재 참가 중인 방 확인 / 좌석 유지
 in_room = False
 active_room = None
-if st.session_state.current_room_code and st.session_state.current_room_code in GLOBAL_ROOMS:
-    in_room = True
-    active_room = GLOBAL_ROOMS[st.session_state.current_room_code]
-    st.sidebar.info(
-        f"🔑 참가 중인 방: **{st.session_state.current_room_code}**\n\n"
-        f"👤 내 이름: **{st.session_state.my_player_name}**\n\n"
-        f"👥 입장 인원: **{len(active_room['joined_humans'])}/{active_room['human_target']}명** "
-        f"(+ 🤖 AI {active_room['ai_count']}명)"
-    )
-    roster = ", ".join(active_room["joined_humans"])
-    st.sidebar.caption(f"참가자: {roster}")
-    if st.sidebar.button("🚪 방 나가기", use_container_width=True):
-        try:
-            if st.session_state.my_player_name.split(" ")[0] in active_room["joined_humans"]:
-                pass
-        except Exception:
-            pass
-        st.session_state.current_room_code = None
-        st.rerun()
-elif st.session_state.current_room_code:
-    # 방이 사라졌거나 만료됨
+cur_code = st.session_state.current_room_code
+if cur_code and cur_code in ROOMS:
+    with LOCK:
+        _room = ROOMS[cur_code]
+        if PE.seat_of_token(_room, my_token) is None:
+            PE.join_room(_room, my_token, st.session_state.my_display_name)
+        else:
+            # 닉네임 변경 반영
+            _room["seats"][PE.seat_of_token(_room, my_token)]["name"] = st.session_state.my_display_name
+        seated = PE.seat_of_token(_room, my_token) is not None
+    if seated:
+        in_room = True
+        active_room = ROOMS[cur_code]
+elif cur_code:
     st.session_state.current_room_code = None
 
-# 룸 참가 시에는 방 설정을 게임에 반영 (방장이 정한 규칙 공유)
-if in_room and active_room:
-    opponents_count = max(1, active_room["max_players"] - 1)
-    start_chips_setting = active_room["start_chips"]
-    rebuy_setting = active_room["rebuys"]
-    bb_setting = active_room["bb"]
+if in_room and active_room is not None:
+    occ = PE.occupied_seats(active_room)
+    st.sidebar.success(f"🔑 방 **{active_room['code']}** 참가 중 ({st.session_state.my_display_name})")
+    st.sidebar.caption("좌석: " + ", ".join(
+        f"{s['idx']+1}.{s['name']}{'(AI)' if s['kind']=='AI' else ''}" for s in occ
+    ))
+    if active_room["host_token"] == my_token:
+        st.sidebar.caption("👑 당신이 방장입니다.")
     st.sidebar.caption(
-        "ℹ️ 방 참가 중에는 방장이 설정한 규칙이 적용됩니다. "
-        "(이 빌드에서는 원격 사람 플레이어도 AI로 대리 진행됩니다.)"
+        f"규칙: 시작칩 {active_room['config']['start_chips']} · "
+        f"리바이 {active_room['config']['rebuys']}회 · BB {active_room['config']['bb']}"
     )
-else:
-    opponents_count = opponents_slider
-    start_chips_setting = start_chips_slider
-    rebuy_setting = rebuy_slider
-    bb_setting = bb_slider
-
-sb_setting = bb_setting // 2
+    if st.sidebar.button("🚪 방 나가기", use_container_width=True):
+        with LOCK:
+            PE.leave_room(active_room, my_token)
+            # 사람 참가자가 아무도 남지 않으면 방 삭제 (AI만 남은 방은 유지 의미 없음)
+            if not PE.human_seats(active_room):
+                ROOMS.pop(active_room["code"], None)
+        st.session_state.current_room_code = None
+        st.rerun()
 
 st.sidebar.markdown("---")
 theme_mode = st.sidebar.radio("🎨 UI 테마 선택", ["☀️ 라이트 모드", "🌙 다크 모드"], index=0)
@@ -596,9 +617,267 @@ st.markdown(f"""
 
 
 # ==========================================
+# 3.5 실시간 멀티플레이 테이블 렌더러
+# ==========================================
+def _render_multiplayer(room_code, my_token):
+    # 상태 스냅샷 (락 보유 중 타임아웃 처리 후 깊은 복제 → 렌더 중 경합 방지)
+    with LOCK:
+        room = ROOMS.get(room_code)
+        if room is None:
+            st.warning("방이 종료되었습니다. 사이드바에서 다시 참가해주세요.")
+            st.session_state.current_room_code = None
+            return
+        PE.enforce_timeout(room)
+        snap = copy.deepcopy(room)
+
+    cfg = snap["config"]
+    seats = snap["seats"]
+    my_seat = PE.seat_of_token(snap, my_token)
+    stage = snap["stage"]
+    is_host = (snap["host_token"] == my_token)
+    order = PE.playing_order(snap)
+    dealer = snap["dealer_seat"]
+    if len(order) >= 2:
+        sb_pos, bb_pos, _ = PE.get_positions(dealer, order)
+    else:
+        sb_pos, bb_pos = -1, -1
+    active = snap["active_seat"]
+    in_active_hand = stage in ("PREFLOP", "FLOP", "TURN", "RIVER")
+    my_turn = in_active_hand and (my_seat is not None) and (active == my_seat)
+
+    # 자동 새로고침: 내 차례가 아닐 때만 (내 차례엔 입력값 보존)
+    if not my_turn:
+        try:
+            st_autorefresh(interval=1500, limit=None, key=f"rf_{room_code}")
+        except Exception:
+            pass  # 테스트/헤드리스 환경에서 커스텀 컴포넌트 미지원 시 무시
+
+    if not is_mobile:
+        st.title("🎮 실시간 멀티플레이 테이블")
+    st.caption(
+        f"🔑 방 **{room_code}** · 나: **{st.session_state.my_display_name}**"
+        + (" 👑방장" if is_host else "")
+        + f" · 핸드 #{snap['hand_no']} · 단계 {stage}"
+    )
+
+    alive = len([s for s in seats if s["kind"] != "EMPTY" and not s["eliminated"]])
+    my_chips = seats[my_seat]["chips"] if my_seat is not None else 0
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("👤 내 칩", my_chips)
+    m2.metric("💰 팟", snap["pot"])
+    m3.metric("🏆 생존", f"{alive}명")
+    m4.metric("📌 단계", stage)
+
+    def pos_tag(i):
+        if i == dealer: return " [BTN]"
+        if i == sb_pos: return " [SB]"
+        if i == bb_pos: return " [BB]"
+        return ""
+
+    occ = [s for s in seats if s["kind"] != "EMPTY"]
+    per_row = 3 if is_mobile else (min(len(occ), 5) or 1)
+    for rs in range(0, len(occ), per_row):
+        row = occ[rs:rs + per_row]
+        cols = st.columns(len(row))
+        for ci, s in enumerate(row):
+            i = s["idx"]
+            with cols[ci]:
+                mine = (i == my_seat)
+                res = snap.get("result")
+                revealed = (stage == "IDLE" and res and i in res.get("revealed", []))
+                turn_hi = (active == i and in_active_hand)
+                border = "#f59e0b" if turn_hi else border_col
+
+                if s["eliminated"]:
+                    cardhtml = "<span style='color:gray;'>💀 탈락</span>"
+                elif (not s["in_hand"]) or s["folded"]:
+                    if s["folded"] and s["in_hand"]:
+                        cardhtml = "<span style='color:#ef4444;'>🏳️ Fold</span>"
+                    else:
+                        cardhtml = "<span style='color:gray;'>대기</span>"
+                elif mine or revealed:
+                    cardhtml = "".join(format_card_html(c) for c in s["hole"])
+                    if revealed and len(s["hole"]) == 2 and len(snap["board"]) == 5:
+                        cardhtml += f" <small style='color:#f59e0b;'>{get_best_korean_hand(s['hole'], snap['board'])}</small>"
+                else:
+                    cardhtml = "<span style='font-size:1.1rem;'>🂠 🂠</span>"
+
+                allin = " <b style='color:#ef4444;'>(ALL IN)</b>" if (s["in_hand"] and not s["folded"] and s["chips"] == 0 and not s["eliminated"]) else ""
+                namelabel = s["name"] + ("🤖" if s["kind"] == "AI" else "") + (" (나)" if mine else "")
+                st.markdown(f"""
+                    <div style="border:2px solid {border}; border-radius:8px; padding:5px 7px; background:{card_bg}; margin-bottom:3px;">
+                        <b>{namelabel}{pos_tag(i)}</b>{' ⬅️턴' if turn_hi else ''}<br>
+                        <span style="color:#60a5fa;">칩 {s['chips']}</span> · <span style="color:{text_sub};">베팅 {s['bet']}/{s['contrib']}</span>{allin}<br>
+                        {cardhtml}<br>
+                        <small style="color:{text_sub};">{s.get('last_action','')}</small>
+                    </div>
+                """, unsafe_allow_html=True)
+
+    board_h = "".join(format_card_html(c) for c in snap["board"]) if snap["board"] else "<span style='color:gray;'>[프리플랍]</span>"
+    st.markdown(f"### 🃏 커뮤니티 보드: {board_h}", unsafe_allow_html=True)
+
+    # 쇼다운 / 결과
+    res = snap.get("result")
+    if stage == "IDLE" and res:
+        if res["type"] == "showdown" and res["pot_rows"]:
+            tbl = "| 팟 | 금액 | 👥 자격자 | 🏆 승자 | 🃏 족보 |\n|:--|:--|:--|:--|:--|\n"
+            for pr in res["pot_rows"]:
+                elig = ", ".join(seats[e]["name"] for e in pr["eligible"])
+                wnames = ", ".join(f"{seats[w]['name']} (+{pr['split']})" for w in pr["winners"])
+                whands = " / ".join(
+                    get_best_korean_hand(seats[w]["hole"], snap["board"])
+                    for w in pr["winners"] if len(seats[w]["hole"]) == 2
+                )
+                tbl += f"| {pr['label']} | {pr['pot_amt']} | {elig} | {wnames} | {whands} |\n"
+            st.markdown(tbl)
+        summ = []
+        for i, amt in enumerate(res["payouts"]):
+            if amt > 0:
+                net = amt - res["contribs"][i]
+                summ.append(f"**{seats[i]['name']}** 수령 {amt} / 순익 {'+' if net >= 0 else ''}{net}")
+        if summ:
+            st.info("💡 " + " · ".join(summ))
+
+    st.markdown("---")
+
+    # 컨트롤 영역
+    if stage == "LOBBY":
+        st.info("🛋️ 대기실입니다. 방장이 시작하면 핸드가 진행됩니다. (빈 좌석은 핸드 시작 시 AI로 자동 충원)")
+        if is_host:
+            if st.button("▶️ 게임 시작", type="primary", use_container_width=True, key="mp_start"):
+                with LOCK:
+                    r = ROOMS.get(room_code)
+                    if r:
+                        PE.start_hand(r)
+                st.rerun()
+        else:
+            st.caption("⏳ 방장이 시작하기를 기다리는 중...")
+
+    elif stage == "IDLE":
+        if snap["winner_seat"] is not None:
+            champ = seats[snap["winner_seat"]]["name"]
+            if snap["winner_seat"] == my_seat:
+                st.success(f"🏆 축하합니다! 최종 우승! ({champ})")
+            else:
+                st.warning(f"🏆 토너먼트 종료 — 우승자: **{champ}**")
+            if is_host:
+                if st.button("🔄 새 토너먼트 (칩 리셋)", type="primary", use_container_width=True, key="mp_reset"):
+                    with LOCK:
+                        r = ROOMS.get(room_code)
+                        if r:
+                            PE.reset_tournament(r)
+                    st.rerun()
+            else:
+                st.caption("⏳ 방장의 재시작을 기다리는 중...")
+        else:
+            if my_seat is not None and seats[my_seat]["chips"] <= 0 and not seats[my_seat]["eliminated"] and seats[my_seat]["rebuys"] > 0:
+                if st.button(f"🔄 리바이 ({cfg['start_chips']}칩 · 남은 {seats[my_seat]['rebuys']}회)", type="primary", use_container_width=True, key="mp_rebuy"):
+                    with LOCK:
+                        r = ROOMS.get(room_code)
+                        if r:
+                            PE.rebuy(r, my_seat)
+                    st.rerun()
+            if is_host:
+                if st.button("🃏 다음 핸드 시작", type="primary", use_container_width=True, key="mp_next"):
+                    with LOCK:
+                        r = ROOMS.get(room_code)
+                        if r:
+                            PE.start_hand(r)
+                    st.rerun()
+            else:
+                st.caption("⏳ 방장이 다음 핸드를 시작하기를 기다리는 중...")
+
+    elif in_active_hand:
+        if my_seat is None:
+            st.info("👀 관전 중입니다. (자동 갱신)")
+        elif seats[my_seat]["folded"] or seats[my_seat]["eliminated"]:
+            st.info("🏳️ 당신은 이번 핸드에서 폴드/탈락 상태입니다. (자동 진행 중)")
+        elif my_turn:
+            s = seats[my_seat]
+            call_needed = max(0, snap["current_max_bet"] - s["bet"])
+            st.success(f"⚡ **당신 차례입니다!** (콜 필요 {call_needed}칩 · 제한시간 {PE.time_left(snap)}초)")
+
+            live_opp = max(0, len(PE.contenders(snap)) - 1)
+            live_eq = 0.0
+            if live_opp > 0 and len(s["hole"]) == 2 and len(snap["board"]) in (0, 3, 4, 5):
+                try:
+                    eq, _, _, _ = calculate_monte_carlo_equity(
+                        [Card.new(c) for c in s["hole"]],
+                        [Card.new(c) for c in snap["board"]],
+                        live_opp, iterations=800)
+                    live_eq = eq * 100.0
+                except Exception:
+                    pass
+            if call_needed > 0:
+                req = call_needed / (snap["pot"] + call_needed) * 100.0
+                verdict = "✅ +EV 콜 구간" if live_eq >= req else "⚠️ -EV (폴드 고려)"
+                st.caption(f"🎲 내 승률 **{live_eq:.1f}%** · 📐 필요 승률 **{req:.1f}%** → {verdict}")
+            else:
+                st.caption(f"🎲 내 승률 **{live_eq:.1f}%** · 추가 비용 없는 체크 가능 구간")
+
+            c1, c2, c3 = st.columns(3)
+            if call_needed == 0:
+                if c1.button("✅ 체크", use_container_width=True, key="mp_check"):
+                    with LOCK:
+                        r = ROOMS.get(room_code)
+                        if r:
+                            PE.player_action(r, my_seat, "check")
+                    st.rerun()
+            else:
+                actual = min(call_needed, s["chips"])
+                tag = " (올인)" if actual >= s["chips"] else ""
+                if c1.button(f"📞 콜 {actual}{tag}", use_container_width=True, key="mp_call"):
+                    with LOCK:
+                        r = ROOMS.get(room_code)
+                        if r:
+                            PE.player_action(r, my_seat, "call")
+                    st.rerun()
+
+            with c2:
+                min_add = call_needed + cfg["bb"]
+                if min_add <= s["chips"]:
+                    rk = f"mp_raise_{room_code}_{snap['hand_no']}_{stage}_{call_needed}"
+                    raw = st.session_state.get(rk, min_add)
+                    try:
+                        val = max(min_add, min(int(raw), s["chips"]))
+                    except Exception:
+                        val = min_add
+                    if st.button(f"🔺 레이즈 +{val}", use_container_width=True, key="mp_raise_btn"):
+                        with LOCK:
+                            r = ROOMS.get(room_code)
+                            if r:
+                                PE.player_action(r, my_seat, "raise", val)
+                        st.rerun()
+                    st.number_input("레이즈 추가 칩", min_value=int(min_add), max_value=int(s["chips"]),
+                                    value=int(val), step=int(cfg["bb"]), key=rk, label_visibility="collapsed")
+                    st.caption(f"최소 {min_add} ~ 최대 {s['chips']} 칩")
+                else:
+                    if st.button(f"🔥 올인 {s['chips']}", use_container_width=True, key="mp_allin"):
+                        with LOCK:
+                            r = ROOMS.get(room_code)
+                            if r:
+                                PE.player_action(r, my_seat, "allin")
+                        st.rerun()
+
+            if c3.button("🏳️ 폴드", use_container_width=True, key="mp_fold"):
+                with LOCK:
+                    r = ROOMS.get(room_code)
+                    if r:
+                        PE.player_action(r, my_seat, "fold")
+                st.rerun()
+        else:
+            actor = seats[active]["name"] if 0 <= active < len(seats) else "?"
+            st.info(f"⏳ **{actor}** 님의 차례입니다... (화면 자동 갱신 중 · {PE.time_left(snap)}초)")
+
+    with st.expander("📜 테이블 진행 로그", expanded=False):
+        for line in snap["log"][-16:][::-1]:
+            st.caption(line)
+
+
+# ==========================================
 # 4. 탭 구성
 # ==========================================
-tab_advisor, tab_game = st.tabs(["📊 실시간 승률 & 수학적 어드바이저", "🎮 1:N 토너먼트 모의게임"])
+tab_advisor, tab_game = st.tabs(["📊 실시간 승률 & 수학적 어드바이저", "🎮 1:N 토너먼트 / 멀티플레이"])
 
 
 # ==========================================
@@ -782,9 +1061,14 @@ with tab_advisor:
 
 
 # ==========================================
-# [TAB 2] 1:N 토너먼트 모의게임
+# [TAB 2] 1:N 토너먼트 모의게임 / 실시간 멀티플레이
 # ==========================================
 with tab_game:
+    # 방에 참가 중이면 실시간 멀티플레이 테이블을 렌더하고 솔로 로직은 건너뛴다.
+    if in_room and active_room is not None:
+        _render_multiplayer(active_room["code"], my_token)
+        st.stop()
+
     total_players = opponents_count + 1
 
     def is_player_eliminated(p_idx):
