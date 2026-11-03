@@ -47,7 +47,7 @@ if "current_room_code" not in st.session_state:
 if "my_player_name" not in st.session_state:
     st.session_state.my_player_name = "Player_1"
 
-# --- [단일 모의게임 세션 상태] ---
+# --- [모의게임 세션 상태] ---
 if "mg_stage" not in st.session_state:
     st.session_state.mg_stage = "IDLE"
 if "mg_user_chips" not in st.session_state:
@@ -462,7 +462,6 @@ st.markdown(f"""
 # ==========================================
 tab_advisor, tab_game = st.tabs(["📊 실시간 승률 & 수학적 어드바이저", "🎮 1:N 토너먼트 모의게임"])
 
-# [TAB 1] 생략 없이 동일 유지
 with tab_advisor:
     if is_mobile:
         st.markdown("### ♠️ 실시간 홀덤 승률 & 수학적 어드바이저")
@@ -797,15 +796,7 @@ with tab_game:
             st.session_state.mg_active_turn = get_next_turn(curr_p)
 
     def start_new_hand():
-        # --- [버그 수정: Hero 칩 0일 때 자동/수동 리바이 처리] ---
-        if st.session_state.mg_user_chips <= 0:
-            if st.session_state.mg_user_rebuys > 0:
-                st.session_state.mg_user_chips = start_chips_setting
-                st.session_state.mg_user_rebuys -= 1
-                st.session_state.mg_user_eliminated = False
-            else:
-                st.session_state.mg_user_eliminated = True
-
+        # AI 리바이 자동 진행
         for idx in range(opponents_count):
             if idx < len(st.session_state.mg_opp_chips):
                 if st.session_state.mg_opp_chips[idx] <= 0 and st.session_state.mg_opp_rebuys[idx] > 0:
@@ -817,7 +808,7 @@ with tab_game:
         deck = [f"{r}{s}" for r in RANKS for s in SUITS]
         random.shuffle(deck)
         
-        if not st.session_state.mg_user_eliminated:
+        if not st.session_state.mg_user_eliminated and st.session_state.mg_user_chips > 0:
             st.session_state.mg_hero_cards = [deck.pop(), deck.pop()]
             st.session_state.mg_user_folded = False
         else:
@@ -961,8 +952,26 @@ with tab_game:
         with hero_col2: st.markdown(f"### 🃏 커뮤니티 보드: {board_h}", unsafe_allow_html=True)
         with hero_col3: st.markdown("<div class='player-action-box'><small style='color:gray;'>대기 중</small></div>", unsafe_allow_html=True)
 
-    # 3) 게임 진행 버튼 / 플레이어 턴 컨트롤
+    # 3) 수동 리바이 선택 UI 및 게임 진행 컨트롤
     if st.session_state.mg_stage == "IDLE":
+        # 칩 소진 시 선택 UI
+        if st.session_state.mg_user_chips <= 0 and not st.session_state.mg_user_eliminated:
+            if st.session_state.mg_user_rebuys > 0:
+                st.error(f"⚠️ 보유 칩이 모두 소진되었습니다! Re-buy in을 진행하시겠습니까? (남은 횟수: {st.session_state.mg_user_rebuys}/{rebuy_setting}회)")
+                rb_col1, rb_col2 = st.columns(2)
+                if rb_col1.button(f"🔄 Re-buy in ({start_chips_setting} 칩 충전)", type="primary", use_container_width=True):
+                    st.session_state.mg_user_chips = start_chips_setting
+                    st.session_state.mg_user_rebuys -= 1
+                    st.session_state.mg_user_eliminated = False
+                    st.rerun()
+                if rb_col2.button("👀 관전하기 / 기권", use_container_width=True):
+                    st.session_state.mg_user_eliminated = True
+                    st.session_state.mg_hero_cards = []
+                    st.rerun()
+            else:
+                st.error(f"😭 모든 Re-buy in({rebuy_setting}회)을 소진하셨습니다. 관전 모드로 전환됩니다.")
+                st.session_state.mg_user_eliminated = True
+
         col_next, col_reset = st.columns([3, 1])
         with col_next:
             if st.button("🃏 다음 핸드 진행하기", key="btn_next_hand", use_container_width=True):
@@ -973,6 +982,7 @@ with tab_game:
                 reset_entire_tournament()
                 start_new_hand()
                 st.rerun()
+
     else:
         call_needed = max(0, st.session_state.mg_current_max_bet - st.session_state.mg_user_bet)
         min_raise_amt = call_needed + bb_setting
@@ -1001,7 +1011,7 @@ with tab_game:
                 run_poker_turn_engine()
                 st.rerun()
 
-        # Raise (요청된 1. 버튼 -> 2. 수량 입력 -> 3. 설명 순 배치)
+        # Raise (1. 버튼 -> 2. 수량 입력 -> 3. 설명 순 배치)
         with act_col2:
             if min_raise_amt <= max_raise_amt:
                 raise_key = f"raise_input_val_{is_mobile}"
